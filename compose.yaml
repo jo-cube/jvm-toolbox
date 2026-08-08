@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_DB: jvm_toolbox
+      POSTGRES_USER: jvm_toolbox
+      POSTGRES_PASSWORD: jvm_toolbox
+    ports:
+      - "${JVM_TOOLBOX_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./src/perf/postgres:/perf:ro
+      - ./src/perf/postgres/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jvm_toolbox -d jvm_toolbox"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=256MB"]
+
+volumes:
+  postgres-data:
