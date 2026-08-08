@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+      - name: Verify correctness, Javadocs, and source sets
+        run: ./gradlew check --warning-mode=fail
+      - name: Verify publication metadata and artifacts
+        run: ./gradlew assemble generatePomFileForMavenJavaPublication --warning-mode=fail
