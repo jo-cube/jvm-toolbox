@@ -49,7 +49,7 @@ discrepancy rather than silently choosing one; update all affected contract surf
 just test                 unit and concurrency tests
 just check                normal full verification, including Javadocs and source-set compilation
 just docs                 warning-free public Javadocs
-just publication-check    publication artifacts and generated POM
+just publication-check    publication artifacts, POM, and Gradle metadata
 just bench-quick          quick JMH smoke run
 just perf-quick           quick synthetic system validation
 ```

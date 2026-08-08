@@ -32,7 +32,7 @@ adapters are experimental repository infrastructure. They are not part of the Ma
 just test                 run unit and concurrency contract tests
 just check                compile all source sets, run tests, enforce Javadocs and runtime dependency policy
 just docs                 generate warning-free API Javadocs
-just publication-check    build binary/source/Javadoc artifacts and generate the Maven POM
+just publication-check    build binary/source/Javadoc artifacts, Maven POM, and Gradle metadata
 ```
 
 `just check` is the expected pre-commit command. It compiles the JMH and performance source sets but

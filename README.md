@@ -112,7 +112,7 @@ just test                 # behavior tests
 just check                # tests, Javadocs, source-set compilation, dependency policy
 just bench-quick          # short JMH smoke run
 just perf-quick           # synthetic system smoke run
-just publication-check    # publication artifacts and generated POM
+just publication-check    # publication artifacts, POM, and Gradle metadata
 ```
 
 Longer performance and PostgreSQL workflows are documented in [development.md](docs/development.md).

@@ -23,4 +23,4 @@ jobs:
       - name: Verify correctness, Javadocs, and source sets
         run: ./gradlew check --warning-mode=fail
       - name: Verify publication metadata and artifacts
-        run: ./gradlew assemble generatePomFileForMavenJavaPublication --warning-mode=fail
+        run: ./gradlew assemble generatePomFileForMavenJavaPublication generateMetadataFileForMavenJavaPublication --warning-mode=fail

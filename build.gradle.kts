@@ -44,6 +44,12 @@ tasks.withType<JavaCompile>().configureEach {
     options.release = 25
 }
 
+tasks.withType<Jar>().configureEach {
+    from(layout.projectDirectory.file("LICENSE")) {
+        into("META-INF")
+    }
+}
+
 tasks.withType<Javadoc>().configureEach {
     (options as StandardJavadocDocletOptions).addBooleanOption("Werror", true)
 }

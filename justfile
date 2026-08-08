@@ -8,7 +8,7 @@ docs:
     ./gradlew javadoc
 
 publication-check:
-    ./gradlew assemble generatePomFileForMavenJavaPublication
+    ./gradlew assemble generatePomFileForMavenJavaPublication generateMetadataFileForMavenJavaPublication
 
 bench-quick:
     ./gradlew jmh -PbenchmarkProfile=quick
