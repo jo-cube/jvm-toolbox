@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -107,6 +108,41 @@ class MicroBatcherAdmissionTest {
             releaseBackend.countDown();
             assertEquals("first", first.get(2, SECONDS));
             close.get(2, SECONDS);
+        } finally {
+            releaseBackend.countDown();
+            batcher.close();
+        }
+    }
+
+    @Test
+    void interruptionBeforeCapacityIsAvailableDoesNotAdmitWork() throws Exception {
+        var backendStarted = new CountDownLatch(1);
+        var releaseBackend = new CountDownLatch(1);
+        var batcher = blockingBatcher(
+                AdmissionPolicy.WAIT, Duration.ZERO, backendStarted, releaseBackend);
+        try {
+            var first = batcher.submit("first");
+            assertTrue(backendStarted.await(2, SECONDS));
+            var attemptingAdmission = new CountDownLatch(1);
+            var outcome = new CompletableFuture<Throwable>();
+            Thread waiter = Thread.ofVirtual().start(() -> {
+                attemptingAdmission.countDown();
+                try {
+                    batcher.submit("interrupted");
+                    outcome.complete(new AssertionError("interrupted submission was admitted"));
+                } catch (Throwable failure) {
+                    outcome.complete(failure);
+                }
+            });
+
+            assertTrue(attemptingAdmission.await(2, SECONDS));
+            assertThrows(TimeoutException.class, () -> outcome.get(50, MILLISECONDS));
+            waiter.interrupt();
+            assertInstanceOf(InterruptedException.class, outcome.get(2, SECONDS));
+            waiter.join();
+
+            releaseBackend.countDown();
+            assertEquals("first", first.get(2, SECONDS));
         } finally {
             releaseBackend.countDown();
             batcher.close();

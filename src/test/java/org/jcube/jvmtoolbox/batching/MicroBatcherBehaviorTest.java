@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Test;
@@ -61,6 +62,31 @@ class MicroBatcherBehaviorTest {
             var secondFailure = assertThrows(ExecutionException.class, () -> second.get(2, SECONDS)).getCause();
             assertEquals(IllegalStateException.class, firstFailure.getClass());
             assertSame(firstFailure, secondFailure);
+        }
+    }
+
+    @Test
+    void nullOutcomeListFailsTheWholeBatch() throws Exception {
+        try (var batcher = new MicroBatcher<String, String>(config(1), inputs -> null)) {
+            var failure = assertThrows(
+                            ExecutionException.class,
+                            () -> batcher.submit("input").get(2, SECONDS))
+                    .getCause();
+
+            assertEquals(IllegalStateException.class, failure.getClass());
+        }
+    }
+
+    @Test
+    void nullOutcomeFailsTheWholeBatch() throws Exception {
+        try (var batcher = new MicroBatcher<String, String>(
+                config(1), inputs -> Collections.singletonList(null))) {
+            var failure = assertThrows(
+                            ExecutionException.class,
+                            () -> batcher.submit("input").get(2, SECONDS))
+                    .getCause();
+
+            assertEquals(IllegalStateException.class, failure.getClass());
         }
     }
 
