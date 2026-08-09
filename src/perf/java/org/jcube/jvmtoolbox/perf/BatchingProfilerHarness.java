@@ -10,7 +10,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.LockSupport;
+import org.jcube.jvmtoolbox.batching.AdmissionPolicy;
 import org.jcube.jvmtoolbox.batching.BatchOutcome;
+import org.jcube.jvmtoolbox.batching.BatchingConfig;
 import org.jcube.jvmtoolbox.perf.backend.ParetoFrontier;
 
 public final class BatchingProfilerHarness {
@@ -58,7 +60,7 @@ public final class BatchingProfilerHarness {
                                 result -> result.latencies().endToEnd().p99(),
                                 ParetoFrontier.Tolerance.relative(0.05)),
                         ParetoFrontier.Objective.minimize(result ->
-                                result.experiment().batching().maxConcurrentBatches())));
+                                result.experiment().config().maxConcurrentBatches())));
 
         verify(repetitions, aggregates);
         print(aggregates, frontier);
@@ -67,46 +69,50 @@ public final class BatchingProfilerHarness {
     }
 
     private static List<BatchingProfiler.Experiment> microExperiments() {
-        var config64 = new BatchingProfiler.BatchingConfiguration(
-                64, Duration.ofNanos(250_000), 4, 4_096);
-        var config128 = new BatchingProfiler.BatchingConfiguration(
-                128, Duration.ofNanos(250_000), 4, 4_096);
-        var low = new BatchingProfiler.BatchingConfiguration(
-                128, Duration.ofMillis(1), 4, 1_024);
-        var overload = new BatchingProfiler.BatchingConfiguration(
-                64, Duration.ofNanos(250_000), 2, 256);
+        var config64 = new BatchingConfig(
+                64, Duration.ofNanos(250_000), 4, 4_096, AdmissionPolicy.WAIT, Duration.ZERO);
+        var config128 = new BatchingConfig(
+                128, Duration.ofNanos(250_000), 4, 4_096, AdmissionPolicy.WAIT, Duration.ZERO);
+        var low = new BatchingConfig(
+                128, Duration.ofMillis(1), 4, 1_024, AdmissionPolicy.REJECT, Duration.ZERO);
+        var overloadReject = new BatchingConfig(
+                64, Duration.ofNanos(250_000), 2, 256, AdmissionPolicy.REJECT, Duration.ZERO);
+        var overloadTimeout = new BatchingConfig(
+                64,
+                Duration.ofNanos(250_000),
+                2,
+                256,
+                AdmissionPolicy.WAIT_WITH_TIMEOUT,
+                Duration.ofNanos(100_000));
+        var overloadWait = new BatchingConfig(
+                64, Duration.ofNanos(250_000), 2, 256, AdmissionPolicy.WAIT, Duration.ZERO);
         return List.of(
                 new BatchingProfiler.ClosedLoopExperiment(
-                        "closed-config-64", config64, BatchingProfiler.Admission.waitIndefinitely(), 1_024),
+                        "closed-config-64", config64, 1_024),
                 new BatchingProfiler.ClosedLoopExperiment(
-                        "closed-config-128", config128, BatchingProfiler.Admission.waitIndefinitely(), 1_024),
+                        "closed-config-128", config128, 1_024),
                 new BatchingProfiler.OpenLoopExperiment(
-                        "open-low", low, BatchingProfiler.Admission.reject(), 2_000),
+                        "open-low", low, 2_000),
                 new BatchingProfiler.OpenLoopExperiment(
-                        "open-overload-reject", overload, BatchingProfiler.Admission.reject(), 80_000),
+                        "open-overload-reject", overloadReject, 80_000),
                 new BatchingProfiler.OpenLoopExperiment(
-                        "open-overload-timeout",
-                        overload,
-                        BatchingProfiler.Admission.waitFor(Duration.ofNanos(100_000)),
-                        80_000),
+                        "open-overload-timeout", overloadTimeout, 80_000),
                 new BatchingProfiler.OpenLoopExperiment(
-                        "open-overload-wait",
-                        overload,
-                        BatchingProfiler.Admission.waitIndefinitely(),
-                        50_000),
+                        "open-overload-wait", overloadWait, 50_000),
                 new BatchingProfiler.ClosedLoopExperiment(
-                        "closed-slow-backend",
-                        config128,
-                        BatchingProfiler.Admission.waitIndefinitely(),
-                        1_024));
+                        "closed-slow-backend", config128, 1_024));
     }
 
     private static BatchingProfiler.Experiment keyedExperiment() {
         return new BatchingProfiler.ClosedLoopExperiment(
                 "keyed-duplicate-heavy",
-                new BatchingProfiler.BatchingConfiguration(
-                        128, Duration.ofNanos(250_000), 4, 4_096),
-                BatchingProfiler.Admission.waitIndefinitely(),
+                new BatchingConfig(
+                        128,
+                        Duration.ofNanos(250_000),
+                        4,
+                        4_096,
+                        AdmissionPolicy.WAIT,
+                        Duration.ZERO),
                 1_024);
     }
 
@@ -161,9 +167,9 @@ public final class BatchingProfilerHarness {
                     || result.latencies().backend().count() != result.completedRequests()
                     || result.latencies().completion().count() != result.completedRequests()
                     || result.maximumPendingRequests()
-                            > result.experiment().batching().maxPendingRequests()
+                            > result.experiment().config().maxPendingRequests()
                     || result.maximumBackendConcurrency()
-                            > result.experiment().batching().maxConcurrentBatches()
+                            > result.experiment().config().maxConcurrentBatches()
                     || result.backendConcurrencyUtilization() < 0
                     || result.backendConcurrencyUtilization() > 1.01) {
                 throw new IllegalStateException("synthetic batching accounting failed for " + result);
@@ -206,7 +212,7 @@ public final class BatchingProfilerHarness {
                 || wait.rejectedRequests() != 0
                 || wait.admissionTimeouts() != 0
                 || wait.maximumPendingRequests()
-                        != wait.experiment().batching().maxPendingRequests()
+                        != wait.experiment().config().maxPendingRequests()
                 || wait.openLoopStability().orElseThrow().status()
                         != BatchingProfiler.OpenLoopStatus.BOUNDED_OVERLOAD
                 || slow.latencies().backend().p99() <= high.latencies().backend().p99() * 3

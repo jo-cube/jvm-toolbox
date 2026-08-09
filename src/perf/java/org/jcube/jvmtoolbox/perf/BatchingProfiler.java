@@ -10,8 +10,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import org.HdrHistogram.Histogram;
-import org.jcube.jvmtoolbox.batching.AdmissionPolicy;
 import org.jcube.jvmtoolbox.batching.BatchOutcome;
+import org.jcube.jvmtoolbox.batching.BatchingConfig;
 
 public final class BatchingProfiler {
     private final Lifecycle lifecycle;
@@ -112,60 +112,19 @@ public final class BatchingProfiler {
         }
     }
 
-    public record BatchingConfiguration(
-            int maxBatchSize,
-            Duration maxWait,
-            int maxConcurrentBatches,
-            int maxPendingRequests) {
-        public BatchingConfiguration {
-            Objects.requireNonNull(maxWait, "maxWait");
-            if (maxBatchSize < 1
-                    || maxWait.isNegative()
-                    || maxConcurrentBatches < 1
-                    || maxPendingRequests < 1) {
-                throw new IllegalArgumentException("invalid batching configuration");
-            }
-        }
-    }
-
-    public record Admission(AdmissionPolicy policy, Duration timeout) {
-        public Admission {
-            Objects.requireNonNull(policy, "policy");
-            Objects.requireNonNull(timeout, "timeout");
-            if (timeout.isNegative()) {
-                throw new IllegalArgumentException("admission timeout cannot be negative");
-            }
-        }
-
-        public static Admission reject() {
-            return new Admission(AdmissionPolicy.REJECT, Duration.ZERO);
-        }
-
-        public static Admission waitIndefinitely() {
-            return new Admission(AdmissionPolicy.WAIT, Duration.ZERO);
-        }
-
-        public static Admission waitFor(Duration timeout) {
-            return new Admission(AdmissionPolicy.WAIT_WITH_TIMEOUT, timeout);
-        }
-    }
-
     public sealed interface Experiment permits ClosedLoopExperiment, OpenLoopExperiment {
         String name();
 
-        BatchingConfiguration batching();
-
-        Admission admission();
+        BatchingConfig config();
     }
 
     public record ClosedLoopExperiment(
             String name,
-            BatchingConfiguration batching,
-            Admission admission,
+            BatchingConfig config,
             int foregroundConcurrency)
             implements Experiment {
         public ClosedLoopExperiment {
-            requireExperiment(name, batching, admission);
+            requireExperiment(name, config);
             if (foregroundConcurrency < 1) {
                 throw new IllegalArgumentException("closed-loop concurrency must be positive");
             }
@@ -174,23 +133,20 @@ public final class BatchingProfiler {
 
     public record OpenLoopExperiment(
             String name,
-            BatchingConfiguration batching,
-            Admission admission,
+            BatchingConfig config,
             long offeredRequestsPerSecond)
             implements Experiment {
         public OpenLoopExperiment {
-            requireExperiment(name, batching, admission);
+            requireExperiment(name, config);
             if (offeredRequestsPerSecond < 1) {
                 throw new IllegalArgumentException("open-loop offered rate must be positive");
             }
         }
     }
 
-    private static void requireExperiment(
-            String name, BatchingConfiguration batching, Admission admission) {
+    private static void requireExperiment(String name, BatchingConfig config) {
         Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(batching, "batching");
-        Objects.requireNonNull(admission, "admission");
+        Objects.requireNonNull(config, "config");
         if (name.isBlank()) {
             throw new IllegalArgumentException("experiment name cannot be blank");
         }
@@ -289,7 +245,7 @@ public final class BatchingProfiler {
         }
 
         public double batchFillRatio() {
-            return averageBatchSize() / experiment.batching().maxBatchSize();
+            return averageBatchSize() / experiment.config().maxBatchSize();
         }
     }
 
@@ -452,7 +408,7 @@ public final class BatchingProfiler {
         }
 
         public double batchFillRatio() {
-            return averageBatchSize() / experiment.batching().maxBatchSize();
+            return averageBatchSize() / experiment.config().maxBatchSize();
         }
     }
 

@@ -33,8 +33,6 @@ import org.jcube.jvmtoolbox.batching.BatchOutcome;
 import org.jcube.jvmtoolbox.batching.BatchingConfig;
 import org.jcube.jvmtoolbox.batching.KeyBatchLoader;
 import org.jcube.jvmtoolbox.batching.MicroBatcher;
-import org.jcube.jvmtoolbox.perf.BatchingProfiler.Admission;
-import org.jcube.jvmtoolbox.perf.BatchingProfiler.BatchingConfiguration;
 import org.jcube.jvmtoolbox.perf.BatchingProfiler.ClosedLoopExperiment;
 import org.jcube.jvmtoolbox.perf.BatchingProfiler.Distribution;
 import org.jcube.jvmtoolbox.perf.BatchingProfiler.Experiment;
@@ -68,7 +66,7 @@ final class BatchingProfilerRuntime {
                 repetition,
                 metrics -> {
                     BatchingProfiler.MicroBackend<I, O> backend = backends.open(experiment);
-                    return new MicroSession<>(experiment.batching(), inputs, backend, metrics);
+                    return new MicroSession<>(experiment.config(), inputs, backend, metrics);
                 });
     }
 
@@ -86,7 +84,7 @@ final class BatchingProfilerRuntime {
                 repetition,
                 metrics -> {
                     BatchingProfiler.KeyBackend<K, V> backend = backends.open(experiment);
-                    return new KeyedSession<>(experiment.batching(), keys, backend, metrics);
+                    return new KeyedSession<>(experiment.config(), keys, backend, metrics);
                 });
     }
 
@@ -303,14 +301,14 @@ final class BatchingProfilerRuntime {
         private final MicroBatcher<TrackedInput<I>, O> batcher;
 
         private MicroSession(
-                BatchingConfiguration configuration,
+                BatchingConfig config,
                 InputGenerator<I> inputs,
                 MicroBackend<I, O> backend,
                 RunMetrics metrics) {
             this.inputs = inputs;
             this.backend = backend;
             this.metrics = metrics;
-            batcher = new MicroBatcher<>(config(configuration, metrics.experiment.admission()), this::process, metrics);
+            batcher = new MicroBatcher<>(config, this::process, metrics);
         }
 
         @Override
@@ -350,14 +348,14 @@ final class BatchingProfilerRuntime {
         private final KeyBatchLoader<TrackedKey<K>, V> loader;
 
         private KeyedSession(
-                BatchingConfiguration configuration,
+                BatchingConfig config,
                 InputGenerator<K> keys,
                 KeyBackend<K, V> backend,
                 RunMetrics metrics) {
             this.keys = keys;
             this.backend = backend;
             this.metrics = metrics;
-            loader = new KeyBatchLoader<>(config(configuration, metrics.experiment.admission()), this::load, metrics);
+            loader = new KeyBatchLoader<>(config, this::load, metrics);
         }
 
         @Override
@@ -404,17 +402,6 @@ final class BatchingProfilerRuntime {
             loader.close();
             backend.close();
         }
-    }
-
-    private static BatchingConfig config(
-            BatchingConfiguration batching, Admission admission) {
-        return new BatchingConfig(
-                batching.maxBatchSize(),
-                batching.maxWait(),
-                batching.maxConcurrentBatches(),
-                batching.maxPendingRequests(),
-                admission.policy(),
-                admission.timeout());
     }
 
     @FunctionalInterface
@@ -635,7 +622,7 @@ final class BatchingProfilerRuntime {
             }
             batches.increment();
             dispatched.add(requestCount);
-            if (requestCount == experiment.batching().maxBatchSize()) {
+            if (requestCount == experiment.config().maxBatchSize()) {
                 sizeTriggered.increment();
             } else {
                 timeTriggered.increment();
@@ -669,13 +656,13 @@ final class BatchingProfilerRuntime {
                     || offered.sum() != admittedCount + rejected.sum() + timedOut.sum()
                     || pending.get() != 0
                     || backendActive != 0
-                    || maxPending.get() > experiment.batching().maxPendingRequests()
-                    || maxBackendActive > experiment.batching().maxConcurrentBatches()) {
+                    || maxPending.get() > experiment.config().maxPendingRequests()
+                    || maxBackendActive > experiment.config().maxConcurrentBatches()) {
                 throw new IllegalStateException("batching profiler accounting invariant failed");
             }
             double utilization = (double) activeSlotNanos
                     / elapsedNanos
-                    / experiment.batching().maxConcurrentBatches();
+                    / experiment.config().maxConcurrentBatches();
             Optional<KeyedMetrics> keyed = target == Target.KEYED
                     ? Optional.of(new KeyedMetrics(
                             keyedLogical.sum(),
@@ -719,8 +706,8 @@ final class BatchingProfilerRuntime {
             long midpoint = midpointOutstanding == Long.MIN_VALUE ? 0 : midpointOutstanding;
             long offerEnd = offerEndOutstanding == Long.MIN_VALUE ? 0 : offerEndOutstanding;
             long growth = offerEnd - midpoint;
-            long allowed = (long) experiment.batching().maxBatchSize()
-                    * experiment.batching().maxConcurrentBatches();
+            long allowed = (long) experiment.config().maxBatchSize()
+                    * experiment.config().maxConcurrentBatches();
             OpenLoopStatus status = rejected.sum() == 0 && timedOut.sum() == 0 && growth <= allowed
                     ? OpenLoopStatus.STABLE
                     : OpenLoopStatus.BOUNDED_OVERLOAD;

@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.jcube.jvmtoolbox.batching.AdmissionPolicy;
 import org.jcube.jvmtoolbox.batching.BatchOutcome;
+import org.jcube.jvmtoolbox.batching.BatchingConfig;
 import org.jcube.jvmtoolbox.perf.BatchingProfiler;
 import org.jcube.jvmtoolbox.perf.BatchingProfilerReport;
 import org.jcube.jvmtoolbox.perf.backend.ParetoFrontier;
@@ -67,33 +69,26 @@ public final class PostgresBatchingProfilerHarness {
     }
 
     private static List<BatchingProfiler.Experiment> experiments() {
-        var config128x8 = new BatchingProfiler.BatchingConfiguration(
-                128, Duration.ofNanos(500_000), 8, 16_384);
-        var config512x4 = new BatchingProfiler.BatchingConfiguration(
-                512, Duration.ofNanos(500_000), 4, 16_384);
+        var config128x8 = new BatchingConfig(
+                128, Duration.ofNanos(500_000), 8, 16_384, AdmissionPolicy.WAIT, Duration.ZERO);
+        var config512x4 = new BatchingConfig(
+                512, Duration.ofNanos(500_000), 4, 16_384, AdmissionPolicy.WAIT, Duration.ZERO);
+        var open128x8 = new BatchingConfig(
+                128, Duration.ofNanos(500_000), 8, 16_384, AdmissionPolicy.REJECT, Duration.ZERO);
         return List.of(
                 new BatchingProfiler.ClosedLoopExperiment(
-                        "postgres-closed-128x8",
-                        config128x8,
-                        BatchingProfiler.Admission.waitIndefinitely(),
-                        4_096),
+                        "postgres-closed-128x8", config128x8, 4_096),
                 new BatchingProfiler.ClosedLoopExperiment(
-                        "postgres-closed-512x4",
-                        config512x4,
-                        BatchingProfiler.Admission.waitIndefinitely(),
-                        4_096),
+                        "postgres-closed-512x4", config512x4, 4_096),
                 new BatchingProfiler.OpenLoopExperiment(
-                        "postgres-open-128x8",
-                        config128x8,
-                        BatchingProfiler.Admission.reject(),
-                        250_000));
+                        "postgres-open-128x8", open128x8, 250_000));
     }
 
     private static BatchingProfiler.KeyBackend<LookupKey, BigDecimal> backend(
             PostgresSettings settings, BatchingProfiler.Experiment experiment)
             throws Exception {
         var jdbc = new JdbcLookupBackend(
-                settings, experiment.batching().maxConcurrentBatches());
+                settings, experiment.config().maxConcurrentBatches());
         return new BatchingProfiler.KeyBackend<>() {
             @Override
             public Map<LookupKey, BatchOutcome<BigDecimal>> load(Set<LookupKey> keys)
@@ -125,7 +120,7 @@ public final class PostgresBatchingProfilerHarness {
                                 result -> result.latencies().endToEnd().p99(),
                                 ParetoFrontier.Tolerance.relative(0.05)),
                         ParetoFrontier.Objective.minimize(result ->
-                                result.experiment().batching().maxConcurrentBatches())));
+                                result.experiment().config().maxConcurrentBatches())));
     }
 
     private static void verify(
@@ -140,9 +135,9 @@ public final class PostgresBatchingProfilerHarness {
                     || result.failedRequests() != 0
                     || result.missingRequests() != 0
                     || result.maximumPendingRequests()
-                            > result.experiment().batching().maxPendingRequests()
+                            > result.experiment().config().maxPendingRequests()
                     || result.maximumBackendConcurrency()
-                            > result.experiment().batching().maxConcurrentBatches()
+                            > result.experiment().config().maxConcurrentBatches()
                     || result.latencies().endToEnd().count() != result.completedRequests()
                     || result.keyedMetrics().orElseThrow().logicalRequests()
                             != result.dispatchedRequests()) {

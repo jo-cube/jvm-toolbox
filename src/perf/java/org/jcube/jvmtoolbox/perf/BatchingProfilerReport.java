@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.jcube.jvmtoolbox.batching.BatchingConfig;
 
 public final class BatchingProfilerReport {
     private BatchingProfilerReport() {}
@@ -124,17 +125,17 @@ public final class BatchingProfilerReport {
     private static ArrayList<String> startRow(
             String type, BatchingProfiler.Target target, BatchingProfiler.Experiment experiment) {
         var row = new ArrayList<String>();
-        BatchingProfiler.BatchingConfiguration batching = experiment.batching();
+        BatchingConfig config = experiment.config();
         row.add(type);
         row.add(target.toString());
         row.add(experiment instanceof BatchingProfiler.ClosedLoopExperiment ? "closed" : "open");
         row.add(experiment.name());
-        row.add(Integer.toString(batching.maxBatchSize()));
-        row.add(Long.toString(batching.maxWait().toNanos()));
-        row.add(Integer.toString(batching.maxConcurrentBatches()));
-        row.add(Integer.toString(batching.maxPendingRequests()));
-        row.add(experiment.admission().policy().toString());
-        row.add(Long.toString(experiment.admission().timeout().toNanos()));
+        row.add(Integer.toString(config.maxBatchSize()));
+        row.add(Long.toString(config.maxWait().toNanos()));
+        row.add(Integer.toString(config.maxConcurrentBatches()));
+        row.add(Integer.toString(config.maxPendingRequests()));
+        row.add(config.admissionPolicy().toString());
+        row.add(Long.toString(config.admissionTimeout().toNanos()));
         row.add(experiment instanceof BatchingProfiler.ClosedLoopExperiment closed
                 ? Integer.toString(closed.foregroundConcurrency())
                 : "");
