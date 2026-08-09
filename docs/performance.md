@@ -20,7 +20,8 @@ The repository separates three questions:
 JMH throughput and average-time results are mechanical measurements, not p95/p99 end-to-end latency.
 System harnesses use high-dynamic-range histograms for latency distributions. Open-loop reports retain
 offered, admitted, completed, rejected, and timed-out counts so overload cannot be hidden by completed
-throughput.
+throughput. Open-loop latency starts at each request's scheduled offer time, so launcher and scheduling
+lag remain visible.
 
 `BackendProfiler` and `BatchingProfiler` retain raw repetitions, aggregate histograms, stability data,
 resource diagnostics, and tolerance-aware Pareto analysis. They remain experimental repository tools

@@ -148,7 +148,6 @@ final class LoadMetrics implements BatchObserver {
 
     @Override
     public void onBatchDispatched(int requestCount) {
-        pending.addAndGet(-requestCount);
         updateMax(maxInFlight, inFlight.incrementAndGet());
         batches.increment();
         dispatchedRequests.add(requestCount);
@@ -162,11 +161,13 @@ final class LoadMetrics implements BatchObserver {
 
     @Override
     public void onBatchCompleted(int requestCount, int successfulRequests, int failedRequests) {
+        pending.addAndGet(-requestCount);
         inFlight.decrementAndGet();
     }
 
     @Override
     public void onBatchFailed(int requestCount, int failedRequests, Throwable failure) {
+        pending.addAndGet(-requestCount);
         inFlight.decrementAndGet();
     }
 

@@ -200,7 +200,8 @@ final class BatchingProfilerRuntime {
                 waitUntil(scheduled);
                 metrics.offered();
                 long request = sequence;
-                executor.execute(() -> executeAsync(request, metrics, session, remaining, drained));
+                executor.execute(() -> executeAsync(
+                        request, scheduled, metrics, session, remaining, drained));
             }
             metrics.markOfferEnd();
         }
@@ -209,12 +210,13 @@ final class BatchingProfilerRuntime {
 
     private static void executeAsync(
             long sequence,
+            long submittedNanos,
             RunMetrics metrics,
             Session session,
             AtomicLong remaining,
             CompletableFuture<Void> drained) {
         try {
-            session.submit(sequence, System.nanoTime()).whenComplete((ignored, failure) -> {
+            session.submit(sequence, submittedNanos).whenComplete((ignored, failure) -> {
                 if (failure != null) {
                     metrics.unexpected(failure);
                 }
@@ -524,7 +526,6 @@ final class BatchingProfilerRuntime {
                 case MISSING -> missing.increment();
                 case FAILURE -> failed.increment();
             }
-            pending.decrementAndGet();
             endToEnd.recordValue(Math.max(1, now - tracker.submittedNanos));
             backend.recordValue(Math.max(1, available - tracker.dispatchNanos));
             completion.recordValue(Math.max(1, now - available));
@@ -626,6 +627,20 @@ final class BatchingProfilerRuntime {
                 sizeTriggered.increment();
             } else {
                 timeTriggered.increment();
+            }
+        }
+
+        @Override
+        public void onBatchCompleted(int requestCount, int successfulRequests, int failedRequests) {
+            if (recording) {
+                pending.addAndGet(-requestCount);
+            }
+        }
+
+        @Override
+        public void onBatchFailed(int requestCount, int failedRequests, Throwable failure) {
+            if (recording) {
+                pending.addAndGet(-requestCount);
             }
         }
 
