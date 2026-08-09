@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeoutException;
@@ -19,6 +18,8 @@ import java.util.function.LongSupplier;
  * <p>This class is thread-safe. {@link #submit(Object)} may block during admission according to the
  * configured policy; processing and future completion are asynchronous after admission. Cancelling its
  * returned future affects only that submission and never interrupts or cancels a backend invocation.
+ * The batcher owns completion of returned futures; callers may observe, compose, wait for, or cancel
+ * them, but must not complete them directly or forcibly replace their outcome.
  *
  * <p>{@link #close()} stops admission, immediately makes a partial batch eligible, and waits for all
  * admitted work and backend invocations to retire. New submissions are rejected once closing starts.
@@ -138,23 +139,6 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                             : "batcher capacity is exhausted");
         }
         return submission.future;
-    }
-
-    /**
-     * Blocks for one submitted result using ordinary {@link CompletableFuture#get()} semantics.
-     *
-     * @param input non-null input
-     * @return the positional result
-     * @throws InterruptedException if interrupted during admission or result waiting
-     * @throws TimeoutException if timed admission expires
-     * @throws ExecutionException if processing fails for this submission
-     * @throws NullPointerException if {@code input} is {@code null}
-     *
-     * <p>If result waiting is interrupted after admission, the admitted request continues; interruption
-     * does not cancel it.
-     */
-    public O submitAndWait(I input) throws InterruptedException, TimeoutException, ExecutionException {
-        return submit(input).get();
     }
 
     /**

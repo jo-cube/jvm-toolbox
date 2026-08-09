@@ -1,8 +1,6 @@
 package org.jcube.jvmtoolbox.batching;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -21,6 +19,8 @@ import java.util.concurrent.TimeoutException;
  *
  * <p>A successful empty {@link Optional} means missing. A failed key or whole-batch failure completes
  * its future exceptionally. Cancelling one future does not cancel work shared with another caller.
+ * The loader owns completion of returned futures; callers may observe, compose, wait for, or cancel
+ * them, but must not complete them directly or forcibly replace their outcome.
  * This class is thread-safe; loading is asynchronous after admission, while admission itself may block
  * according to the configured policy.
  *
@@ -87,7 +87,7 @@ public final class KeyBatchLoader<K, V> implements AutoCloseable {
     @SuppressWarnings("unchecked")
     private static <K, V> List<BatchOutcome<Optional<V>>> process(
             List<K> keys, KeyBatchProcessor<K, V> processor, BatchObserver observer) throws Exception {
-        Set<K> uniqueKeys = Collections.unmodifiableSet(new LinkedHashSet<>(keys));
+        Set<K> uniqueKeys = Set.copyOf(keys);
         if (observer != null) {
             BatchObserverSupport.keysCoalesced(observer, keys.size(), uniqueKeys.size());
         }
@@ -115,7 +115,7 @@ public final class KeyBatchLoader<K, V> implements AutoCloseable {
             throw new IllegalStateException("key batch processor returned null");
         }
         for (var entry : loaded.entrySet()) {
-            if (!requested.contains(entry.getKey())) {
+            if (entry.getKey() == null || !requested.contains(entry.getKey())) {
                 throw new IllegalStateException("key batch processor returned an unrequested key");
             }
             BatchOutcome<V> outcome = entry.getValue();

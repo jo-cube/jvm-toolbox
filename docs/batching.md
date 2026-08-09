@@ -152,8 +152,8 @@ For an event-loop server, normally use `REJECT`: waiting admission would block t
 before `submit` returns its future. Translate overload to the response appropriate for the protocol,
 commonly HTTP 429 or 503, and apply retries only at a layer that has an explicit retry budget.
 
-For a virtual-thread-per-request server, `WAIT`, timed admission, `future.get()`, and `submitAndWait`
-are supported. Blocking virtual threads can simplify application code, while asynchronous future
+For a virtual-thread-per-request server, `WAIT`, timed admission, and `CompletableFuture.get()` are
+supported. Blocking virtual threads can simplify application code, while asynchronous future
 composition produced higher throughput in this repository's measured workloads.
 
 The API does not specify which thread completes a future. Keep dependent callbacks short and
@@ -232,9 +232,12 @@ Every submission has an independent future:
 - Capacity is released when cancelled work is observed or its dispatched batch retires, not
   necessarily when `cancel` returns.
 
+The batcher owns completion of the returned future. Callers may observe, compose, wait for, or cancel
+it, but must not invoke `complete`, `completeExceptionally`, `obtrudeValue`, or `obtrudeException`.
+
 The `mayInterruptIfRunning` argument to `CompletableFuture.cancel` does not interrupt backend work. If
-`submitAndWait` is interrupted after admission, processing continues unless the application separately
-cancels the returned future obtained through `submit`.
+waiting on a returned future is interrupted after admission, processing continues unless the
+application separately cancels that future.
 
 ## Shutdown
 

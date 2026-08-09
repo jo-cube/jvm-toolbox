@@ -141,7 +141,7 @@ class MicroBatcherConcurrencyTest {
     }
 
     @Test
-    void interruptingSubmitAndWaitDoesNotCancelAdmittedWork() throws Exception {
+    void interruptingResultWaitDoesNotCancelAdmittedWork() throws Exception {
         var backendStarted = new CountDownLatch(1);
         var releaseBackend = new CountDownLatch(1);
         var callerInterrupted = new CountDownLatch(1);
@@ -155,7 +155,7 @@ class MicroBatcherConcurrencyTest {
         try {
             Thread caller = Thread.ofVirtual().start(() -> {
                 try {
-                    batcher.submitAndWait("value");
+                    batcher.submit("value").get();
                     unexpected.set(new AssertionError("blocking wait completed without interruption"));
                 } catch (InterruptedException expected) {
                     callerInterrupted.countDown();

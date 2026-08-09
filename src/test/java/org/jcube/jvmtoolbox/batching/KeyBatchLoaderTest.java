@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -165,6 +166,16 @@ class KeyBatchLoaderTest {
     void nullBackendValuesAreFailuresRatherThanMissing() throws Exception {
         try (var loader = new KeyBatchLoader<String, String>(config(1), keys ->
                 Map.of("key", BatchOutcome.success(null)))) {
+            var failure = assertThrows(ExecutionException.class, () -> loader.load("key").get(2, SECONDS));
+
+            assertEquals(IllegalStateException.class, failure.getCause().getClass());
+        }
+    }
+
+    @Test
+    void nullBackendKeysFailTheWholeBatch() throws Exception {
+        try (var loader = new KeyBatchLoader<String, String>(config(1), keys ->
+                Collections.singletonMap(null, BatchOutcome.success("value")))) {
             var failure = assertThrows(ExecutionException.class, () -> loader.load("key").get(2, SECONDS));
 
             assertEquals(IllegalStateException.class, failure.getCause().getClass());

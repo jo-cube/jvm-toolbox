@@ -171,7 +171,7 @@ code must not call back into the loader that invoked it.
 
 ## Cancellation, capacity, and shutdown
 
-Every caller owns an independent future. Cancelling one duplicate caller does not cancel another
+Every caller receives an independent future. Cancelling one duplicate caller does not cancel another
 caller or remove a backend key required by another live caller. If every caller for a key is cancelled
 before dispatch, its work can be skipped; cancellation after dispatch never interrupts the backend.
 

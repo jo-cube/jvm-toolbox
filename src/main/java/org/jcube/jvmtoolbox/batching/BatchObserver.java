@@ -4,8 +4,8 @@ package org.jcube.jvmtoolbox.batching;
  * Receives opt-in batching lifecycle callbacks.
  *
  * <p>Callbacks are synchronous on the thread causing the event and callbacks for different requests or
- * batches may run concurrently. Per request, admission precedes dispatch and a successful cancellation
- * precedes any terminal batch event that still references the dispatched request. Observers should be
+ * batches may run concurrently. Per request, admission precedes dispatch, and a batch's dispatch event
+ * precedes its terminal event. Cancellation may race with a terminal batch event. Observers should be
  * thread-safe, return promptly, and not call back into the observed batcher. Any exception or error
  * thrown by an observer is ignored so observation cannot change batching results.
  */

@@ -48,8 +48,10 @@ public record BatchingConfig(
         if (maxWait.isNegative()) {
             throw new IllegalArgumentException("maxWait must not be negative");
         }
-        if (admissionTimeout.isNegative()
-                || (admissionPolicy == AdmissionPolicy.WAIT_WITH_TIMEOUT && admissionTimeout.isZero())) {
+        if (admissionTimeout.isNegative()) {
+            throw new IllegalArgumentException("admissionTimeout must not be negative");
+        }
+        if (admissionPolicy == AdmissionPolicy.WAIT_WITH_TIMEOUT && admissionTimeout.isZero()) {
             throw new IllegalArgumentException("admissionTimeout must be positive for WAIT_WITH_TIMEOUT");
         }
         maxWait.toNanos();
