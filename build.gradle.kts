@@ -1,11 +1,11 @@
 plugins {
     `java-library`
-    `maven-publish`
+    id("com.vanniktech.maven.publish.base") version "0.37.0"
     id("me.champeau.jmh") version "0.7.3"
 }
 
-group = "org.jcube"
-version = "0.1.0-alpha.1"
+group = "io.github.jo-cube"
+version = providers.gradleProperty("releaseVersion").orElse("0.0.0-SNAPSHOT").get()
 description = "Small, reusable JVM abstractions with precise contracts"
 
 repositories {
@@ -106,6 +106,11 @@ publishing {
             }
         }
     }
+}
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
 }
 
 tasks.register<JavaExec>("perf") {
