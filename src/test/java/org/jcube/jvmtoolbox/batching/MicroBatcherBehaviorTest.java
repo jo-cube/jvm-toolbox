@@ -2,6 +2,7 @@ package org.jcube.jvmtoolbox.batching;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -12,6 +13,24 @@ import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Test;
 
 class MicroBatcherBehaviorTest {
+    @Test
+    void processorReceivesAnUnmodifiableBatch() throws Exception {
+        try (var batcher = new MicroBatcher<String, String>(config(1), inputs -> {
+            assertThrows(UnsupportedOperationException.class, () -> inputs.add("other"));
+            return List.of(BatchOutcome.success(inputs.getFirst()));
+        })) {
+            assertEquals("input", batcher.submit("input").get(2, SECONDS));
+        }
+    }
+
+    @Test
+    void successfulOutcomeMayContainNull() throws Exception {
+        try (var batcher = new MicroBatcher<String, Void>(
+                config(1), inputs -> List.of(BatchOutcome.success(null)))) {
+            assertNull(batcher.submit("input").get(2, SECONDS));
+        }
+    }
+
     @Test
     void preservesPositionAndTreatsDuplicateInputsIndependently() throws Exception {
         try (var batcher = new MicroBatcher<String, String>(config(2), inputs -> List.of(

@@ -22,6 +22,16 @@ import org.junit.jupiter.api.Test;
 
 class KeyBatchLoaderTest {
     @Test
+    void processorReceivesAnUnmodifiableKeySet() throws Exception {
+        try (var loader = new KeyBatchLoader<String, String>(config(1), keys -> {
+            assertThrows(UnsupportedOperationException.class, () -> keys.add("other"));
+            return Map.of("key", BatchOutcome.success("value"));
+        })) {
+            assertEquals(Optional.of("value"), loader.load("key").get(2, SECONDS));
+        }
+    }
+
+    @Test
     void equalKeysCoalesceAndOneResultFansOutToEveryCaller() throws Exception {
         var calls = new AtomicInteger();
         var seenKeys = new AtomicReference<Set<String>>();
