@@ -115,6 +115,6 @@ just perf-quick           # synthetic system smoke run
 just publication-check    # publication artifacts, POM, and Gradle metadata
 ```
 
-Longer performance and PostgreSQL workflows are documented in [development.md](docs/development.md).
+Longer performance and PostgreSQL workflows are documented in [performance.md](docs/performance.md).
 
 Licensed under the [MIT License](LICENSE).
