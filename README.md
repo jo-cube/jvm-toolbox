@@ -13,7 +13,7 @@ Gradle:
 
 ```kotlin
 dependencies {
-    implementation("org.jcube:jvm-toolbox:0.1.0-alpha.1")
+    implementation("io.github.jo-cube:jvm-toolbox:VERSION")
 }
 ```
 
@@ -21,14 +21,13 @@ Maven:
 
 ```xml
 <dependency>
-  <groupId>org.jcube</groupId>
+  <groupId>io.github.jo-cube</groupId>
   <artifactId>jvm-toolbox</artifactId>
-  <version>0.1.0-alpha.1</version>
+  <version>VERSION</version>
 </dependency>
 ```
 
-The repository is prepared to produce this artifact, but an external Maven repository must host it
-before these coordinates can be resolved outside a local publication.
+Published GitHub Releases are published to Maven Central. Replace `VERSION` with a released version.
 
 ## Batching tools
 

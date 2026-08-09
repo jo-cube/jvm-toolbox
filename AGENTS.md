@@ -6,7 +6,7 @@ useful documentation, and measured performance. It is not a home for miscellaneo
 ## Baseline and boundaries
 
 - Production is Java 25 without preview APIs.
-- The published coordinate is `org.jcube:jvm-toolbox`; packages start with `org.jcube.jvmtoolbox`.
+- The published coordinate is `io.github.jo-cube:jvm-toolbox`; packages start with `org.jcube.jvmtoolbox`.
 - The production runtime has no dependencies. Keep JUnit, JMH, HdrHistogram, JDBC, Docker, and profiling
   dependencies outside `src/main`.
 - Public APIs use Java-native types and must not expose queues, executors, schedulers, virtual-thread

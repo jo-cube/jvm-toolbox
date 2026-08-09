@@ -85,9 +85,69 @@ artifacts, not maintained documentation.
 
 ## Publication
 
-The `mavenJava` publication produces `org.jcube:jvm-toolbox` with binary, source, Javadoc, Gradle module,
-license, project, developer, and SCM metadata. `./gradlew publishToMavenLocal` is available for local
-consumer testing.
+The `mavenJava` publication produces `io.github.jo-cube:jvm-toolbox` with binary, source, Javadoc,
+Gradle module, license, project, developer, and SCM metadata. Local builds use
+`0.0.0-SNAPSHOT`; pass `-PreleaseVersion=1.2.3` when a specific version is needed. The release
+workflow supplies this property from the published GitHub Release's `v1.2.3` tag, so release versions
+are not committed to the build file.
+
+CI and release automation are deliberately separate:
+
+| Workflow | Trigger | Responsibility |
+| --- | --- | --- |
+| `CI` | Pull requests, pushes to `main`, manual dispatch | Run `check` and build publication metadata without release credentials. |
+| `Release` | Published GitHub Releases | Validate the release tag on `main`, repeat verification, then sign and publish through the Maven Central Portal. |
+
+The release workflow accepts tags such as `v1.2.3` and `v1.2.3-alpha.1`; Maven receives the version
+without the leading `v`. A Central release is immutable, so never move or reuse a published version
+tag.
+
+### One-time GitHub and Maven Central setup
+
+1. Generate a user token in the [Maven Central Portal](https://central.sonatype.com/usertoken).
+2. Create a passphrase-protected PGP key, publish its public key to a Central-supported key server,
+   and export the armored private key:
+
+   ```text
+   gpg --gen-key
+   gpg --keyserver keyserver.ubuntu.com --send-keys KEY_ID
+   gpg --export-secret-keys --armor KEY_ID
+   ```
+
+3. Create a GitHub environment named `maven-central` and add these environment secrets:
+
+   | Secret | Value |
+   | --- | --- |
+   | `MAVEN_CENTRAL_USERNAME` | Username from the generated Central Portal user token. |
+   | `MAVEN_CENTRAL_PASSWORD` | Password from the generated Central Portal user token. |
+   | `SIGNING_KEY` | Complete armored private key, including the begin/end lines. |
+   | `SIGNING_PASSWORD` | Private-key passphrase. |
+
+4. Restrict the `maven-central` environment to tags matching `v*`. Requiring approval is useful for
+   early releases because the workflow publishes automatically after Central validates the bundle.
+5. Protect `main`: require pull requests and the `CI / verify` check, and restrict creation or update
+   of `v*` tags to maintainers.
+
+### Releasing
+
+Merge the feature branch through a pull request, update local `main`, then tag the exact commit:
+
+```text
+git switch main
+git pull --ff-only
+git tag -a v0.1.0-alpha.1 -m "v0.1.0-alpha.1"
+git push origin v0.1.0-alpha.1
+```
+
+Create a GitHub Release for that tag and publish it; pushing the tag alone does not publish to Maven
+Central. The release workflow rejects malformed tags and commits that are not contained in
+`origin/main`. After the protected environment is approved, it signs the artifacts, uploads a
+deployment, waits for Central validation, and releases it automatically. Maven Central synchronization
+can take additional time after the workflow succeeds.
+
+`./gradlew publishToMavenLocal` remains available for local consumer testing. For a release-shaped
+local artifact, use `./gradlew publishToMavenLocal -PreleaseVersion=1.2.3` and configure local signing
+credentials as described by Gradle's signing plugin.
 
 Before preparing a prerelease:
 
@@ -103,7 +163,3 @@ Before preparing a prerelease:
 Normal CI repeats correctness, warning-free Javadocs, source-set compilation, runtime dependency
 isolation, and publication artifact generation. It does not run Docker or assert performance
 thresholds.
-
-External publication is intentionally not configured. A release repository account/namespace,
-credentials, artifact signing, and the selected repository endpoint are external prerequisites for an
-actual prerelease upload.
