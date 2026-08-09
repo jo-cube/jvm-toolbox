@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+      - name: Validate release tag
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?)$ ]]; then
+            echo "Release tags must look like v1.2.3 or v1.2.3-alpha.1" >&2
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "The tagged commit must be on main" >&2
+            exit 1
+          }
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+      - name: Verify release
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: ./gradlew check assemble generatePomFileForMavenJavaPublication generateMetadataFileForMavenJavaPublication -PreleaseVersion="$RELEASE_VERSION" --warning-mode=fail
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment:
+      name: maven-central
+      url: https://central.sonatype.com/publishing/deployments
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+      - name: Publish and release on Maven Central
+        env:
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+        run: ./gradlew publishAndReleaseToMavenCentral -PreleaseVersion="$RELEASE_VERSION" --warning-mode=fail
