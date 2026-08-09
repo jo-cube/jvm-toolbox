@@ -14,7 +14,7 @@ source sets.
 ## Repository map
 
 ```text
-src/main/java/       published batching API and runtime
+src/main/java/       published API and runtime
 src/test/java/       behavior and concurrency contract tests
 src/jmh/java/        JMH mechanical benchmarks
 src/perf/java/       synthetic, profiling, and PostgreSQL tooling

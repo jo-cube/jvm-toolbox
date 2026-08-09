@@ -21,7 +21,7 @@ java {
 }
 
 dependencies {
-    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -29,11 +29,6 @@ val perfSourceSet = sourceSets.create("perf") {
     compileClasspath += sourceSets.main.get().output
     runtimeClasspath += sourceSets.main.get().output
 }
-
-configurations[perfSourceSet.implementationConfigurationName]
-    .extendsFrom(configurations.implementation.get())
-configurations[perfSourceSet.runtimeOnlyConfigurationName]
-    .extendsFrom(configurations.runtimeOnly.get())
 
 dependencies {
     add(perfSourceSet.implementationConfigurationName, "org.hdrhistogram:HdrHistogram:2.2.2")
