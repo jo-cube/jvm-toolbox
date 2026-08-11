@@ -175,9 +175,9 @@ Every caller receives an independent future. Cancelling one duplicate caller doe
 caller or remove a backend key required by another live caller. If every caller for a key is cancelled
 before dispatch, its work can be skipped; cancellation after dispatch never interrupts the backend.
 
-Cancelled callers release capacity only when observed by the batching coordinator or when their
-already-dispatched batch retires. Cancellation is therefore not an immediate capacity reservation
-mechanism.
+Cancellation notifies the batching coordinator. Cancelled callers release capacity only when the
+coordinator observes them or when their already-dispatched batch retires, so cancellation is not an
+immediate capacity reservation mechanism.
 
 Admission policies, timing, observer behavior, and graceful shutdown are identical to `MicroBatcher`.
 During shutdown, stop new frontend requests, close the loader so admitted work drains, and close its

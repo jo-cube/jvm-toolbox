@@ -19,6 +19,8 @@ import java.util.concurrent.TimeoutException;
  *
  * <p>A successful empty {@link Optional} means missing. A failed key or whole-batch failure completes
  * its future exceptionally. Cancelling one future does not cancel work shared with another caller.
+ * Successful cancellation notifies the coordinator, while capacity is released only after the
+ * cancellation is observed or its dispatched batch retires.
  * The loader owns completion of returned futures; callers may observe, compose, wait for, or cancel
  * them, but must not complete them directly or forcibly replace their outcome.
  * This class is thread-safe; loading is asynchronous after admission, while admission itself may block

@@ -229,8 +229,8 @@ Every submission has an independent future:
 - Before dispatch, cancelled work is skipped when the coordinator encounters it.
 - After dispatch, cancellation does not interrupt or cancel the backend invocation.
 - Cancelling one request does not affect sibling positions.
-- Capacity is released when cancelled work is observed or its dispatched batch retires, not
-  necessarily when `cancel` returns.
+- Cancellation notifies the coordinator, but capacity is released only when cancelled work is
+  observed or its dispatched batch retires, not necessarily when `cancel` returns.
 
 The batcher owns completion of the returned future. Callers may observe, compose, wait for, or cancel
 it, but must not invoke `complete`, `completeExceptionally`, `obtrudeValue`, or `obtrudeException`.

@@ -18,6 +18,8 @@ import java.util.function.LongSupplier;
  * <p>This class is thread-safe. {@link #submit(Object)} may block during admission according to the
  * configured policy; processing and future completion are asynchronous after admission. Cancelling its
  * returned future affects only that submission and never interrupts or cancels a backend invocation.
+ * Successful cancellation notifies the coordinator, while capacity is released only after the
+ * cancellation is observed or its dispatched batch retires.
  * The batcher owns completion of returned futures; callers may observe, compose, wait for, or cancel
  * them, but must not complete them directly or forcibly replace their outcome.
  *
@@ -45,6 +47,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     private final Condition workAvailable = lock.newCondition();
     private final Condition capacityAvailable = lock.newCondition();
     private final ArrayDeque<Submission<I, O>> ingress = new ArrayDeque<>();
+    private final CancellationNotifier cancellationNotifier;
     private final Semaphore executionSlots;
     private final Thread coordinator;
 
@@ -90,6 +93,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         this.nanoClock = Objects.requireNonNull(nanoClock, "nanoClock");
         maxWaitNanos = config.maxWait().toNanos();
         admissionTimeoutNanos = config.admissionTimeout().toNanos();
+        cancellationNotifier = new CancellationNotifier(lock, workAvailable, observer);
         executionSlots = new Semaphore(config.maxConcurrentBatches());
         coordinator = Thread.ofPlatform()
                 .daemon(true)
@@ -115,7 +119,8 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         try {
             rejection = awaitCapacity();
             if (rejection == null) {
-                submission = new Submission<>(input, nanoClock.getAsLong(), observer);
+                submission = new Submission<>(
+                        input, nanoClock.getAsLong(), new OwnedFuture<>(cancellationNotifier));
                 outstanding++;
                 if (observer != null) {
                     BatchObserverSupport.admitted(observer);
@@ -166,12 +171,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     }
 
     void signalCoordinator() {
-        lock.lock();
-        try {
-            workAvailable.signalAll();
-        } finally {
-            lock.unlock();
-        }
+        cancellationNotifier.signal();
     }
 
     private BatchObserver.RejectionReason awaitCapacity() throws InterruptedException {
@@ -250,9 +250,16 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         var batch = new ArrayList<Submission<I, O>>(config.maxBatchSize());
         batch.add(first);
         while (batch.size() < config.maxBatchSize()) {
-            var next = takeBeforeDeadline(first.admittedAt);
+            var next = takeBeforeDeadline(batch.getFirst().admittedAt, batch);
             if (next == null) {
-                break;
+                if (!hasCancelled(batch)) {
+                    return batch;
+                }
+                retireCancelled(batch);
+                if (batch.isEmpty()) {
+                    return batch;
+                }
+                continue;
             }
             if (next.future.isCancelled()) {
                 retire(next);
@@ -263,10 +270,14 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         return batch;
     }
 
-    private Submission<I, O> takeBeforeDeadline(long oldestAdmission) {
+    private Submission<I, O> takeBeforeDeadline(
+            long oldestAdmission, List<Submission<I, O>> batch) {
         lock.lock();
         try {
             while (ingress.isEmpty()) {
+                if (hasCancelled(batch)) {
+                    return null;
+                }
                 if (state != State.ACCEPTING) {
                     return null;
                 }
@@ -287,20 +298,28 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         }
     }
 
-    private void dispatch(List<Submission<I, O>> batch) {
-        var live = new ArrayList<Submission<I, O>>(batch.size());
+    private static boolean hasCancelled(List<? extends Submission<?, ?>> batch) {
         for (var submission : batch) {
             if (submission.future.isCancelled()) {
-                retire(submission);
-            } else {
-                live.add(submission);
+                return true;
             }
         }
+        return false;
+    }
+
+    private void dispatch(List<Submission<I, O>> batch) {
+        var live = new ArrayList<>(batch);
+        retireCancelled(live);
         if (live.isEmpty()) {
             return;
         }
 
         executionSlots.acquireUninterruptibly();
+        retireCancelled(live);
+        if (live.isEmpty()) {
+            executionSlots.release();
+            return;
+        }
         if (observer != null) {
             BatchObserverSupport.batchDispatched(observer, live.size());
         }
@@ -315,6 +334,17 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
             }
             retire(live);
             executionSlots.release();
+        }
+    }
+
+    private void retireCancelled(List<Submission<I, O>> batch) {
+        var iterator = batch.iterator();
+        while (iterator.hasNext()) {
+            var submission = iterator.next();
+            if (submission.future.isCancelled()) {
+                iterator.remove();
+                retire(submission);
+            }
         }
     }
 
@@ -450,29 +480,56 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         private final long admittedAt;
         private final CompletableFuture<O> future;
 
-        private Submission(I input, long admittedAt, BatchObserver observer) {
+        private Submission(I input, long admittedAt, CompletableFuture<O> future) {
             this.input = input;
             this.admittedAt = admittedAt;
-            future = observer == null
-                    ? new CompletableFuture<>()
-                    : new ObservedFuture<>(observer);
+            this.future = future;
         }
     }
 
-    private static final class ObservedFuture<O> extends CompletableFuture<O> {
-        private final BatchObserver observer;
+    private static final class OwnedFuture<O> extends CompletableFuture<O> {
+        private final CancellationNotifier notifier;
 
-        private ObservedFuture(BatchObserver observer) {
-            this.observer = observer;
+        private OwnedFuture(CancellationNotifier notifier) {
+            this.notifier = notifier;
         }
 
         @Override
         public boolean cancel(boolean mayInterruptIfRunning) {
             boolean cancelled = super.cancel(mayInterruptIfRunning);
             if (cancelled) {
-                BatchObserverSupport.cancelled(observer);
+                notifier.cancelled();
             }
             return cancelled;
+        }
+    }
+
+    private static final class CancellationNotifier {
+        private final ReentrantLock lock;
+        private final Condition workAvailable;
+        private final BatchObserver observer;
+
+        private CancellationNotifier(
+                ReentrantLock lock, Condition workAvailable, BatchObserver observer) {
+            this.lock = lock;
+            this.workAvailable = workAvailable;
+            this.observer = observer;
+        }
+
+        private void cancelled() {
+            if (observer != null) {
+                BatchObserverSupport.cancelled(observer);
+            }
+            signal();
+        }
+
+        private void signal() {
+            lock.lock();
+            try {
+                workAvailable.signalAll();
+            } finally {
+                lock.unlock();
+            }
         }
     }
 }

@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class MicroBatcherAdmissionTest {
@@ -146,6 +147,36 @@ class MicroBatcherAdmissionTest {
         } finally {
             releaseBackend.countDown();
             batcher.close();
+        }
+    }
+
+    @Test
+    void cancellationWakesTheCoordinatorAndReleasesCapacity() throws Exception {
+        var clockCalls = new AtomicInteger();
+        var coordinatorWaiting = new CountDownLatch(1);
+        var config = new BatchingConfig(
+                2,
+                Duration.ofHours(1),
+                1,
+                1,
+                AdmissionPolicy.WAIT,
+                Duration.ZERO);
+        try (var callers = Executors.newVirtualThreadPerTaskExecutor();
+                var batcher = new MicroBatcher<String, String>(config, inputs ->
+                        inputs.stream().map(BatchOutcome::success).toList(), () -> {
+                            if (clockCalls.incrementAndGet() > 1) {
+                                coordinatorWaiting.countDown();
+                            }
+                            return 0;
+                        })) {
+            var cancelled = batcher.submit("cancelled");
+            assertTrue(coordinatorWaiting.await(2, SECONDS));
+            assertTrue(cancelled.cancel(false));
+
+            var live = callers.submit(() -> batcher.submit("live")).get(2, SECONDS);
+            batcher.close();
+
+            assertEquals("live", live.get(2, SECONDS));
         }
     }
 
