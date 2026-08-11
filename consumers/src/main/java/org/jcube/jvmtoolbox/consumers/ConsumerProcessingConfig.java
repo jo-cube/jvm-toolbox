@@ -25,7 +25,15 @@ public record ConsumerProcessingConfig(
         int maxPollRecords,
         Duration pollTimeout) {
 
-    /** Creates validated processing configuration. */
+    /**
+     * Creates validated processing configuration.
+     *
+     * @throws IllegalArgumentException if a numeric limit is not positive, {@code maxBatchWait} is
+     *     negative, {@code pollTimeout} is not positive, or {@code maxPollRecords} exceeds either
+     *     in-flight limit
+     * @throws NullPointerException if either duration is {@code null}
+     * @throws ArithmeticException if either duration cannot be represented in nanoseconds
+     */
     public ConsumerProcessingConfig {
         positive(laneCount, "laneCount");
         positive(maxBatchSize, "maxBatchSize");

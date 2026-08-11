@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -29,6 +30,7 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,77 @@ class LaneConsumerTest {
     private static final String TOPIC = "events";
     private static final TopicPartition P0 = new TopicPartition(TOPIC, 0);
     private static final TopicPartition P1 = new TopicPartition(TOPIC, 1);
+
+    @Test
+    void closeBeforeRunClosesOwnedDeserializers() {
+        var keyDeserializer = new ClosingDeserializer<Integer>();
+        var valueDeserializer = new ClosingDeserializer<String>();
+        var setup = new LaneConsumer<>(
+                Map.of(ConsumerConfig.GROUP_ID_CONFIG, "test-group"),
+                keyDeserializer,
+                valueDeserializer,
+                List.of(TOPIC),
+                config(1, 1, 1, 1, 1, 1),
+                LaneRouter.byKeyHashCode(),
+                ignored -> {});
+
+        setup.close();
+        setup.close();
+
+        assertEquals(1, keyDeserializer.closeCalls);
+        assertEquals(1, valueDeserializer.closeCalls);
+    }
+
+    @Test
+    void consumerConstructionFailureClosesOwnedDeserializers() {
+        var expected = new IllegalStateException("construction failed");
+        var keyDeserializer = new ClosingDeserializer<Integer>();
+        var valueDeserializer = new ClosingDeserializer<String>();
+        var setup = new LaneConsumer<>(
+                Map.of(ConsumerConfig.GROUP_ID_CONFIG, "test-group"),
+                keyDeserializer,
+                valueDeserializer,
+                List.of(TOPIC),
+                config(1, 1, 1, 1, 1, 1),
+                LaneRouter.byKeyHashCode(),
+                ignored -> {},
+                (properties, key, value) -> {
+                    throw expected;
+                },
+                System::nanoTime);
+
+        assertSame(expected, assertThrows(IllegalStateException.class, setup::run));
+        assertEquals(1, keyDeserializer.closeCalls);
+        assertEquals(1, valueDeserializer.closeCalls);
+    }
+
+    @Test
+    void validatesManagedKafkaPropertiesWithoutLossyCoercion() {
+        var config = config(1, 1, 1, 1, 1, 1);
+        var setup = new LaneConsumer<>(
+                Map.of(
+                        ConsumerConfig.GROUP_ID_CONFIG, "test-group",
+                        ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, " false ",
+                        ConsumerConfig.MAX_POLL_RECORDS_CONFIG, " 1 "),
+                new IntegerDeserializer(),
+                new StringDeserializer(),
+                List.of(TOPIC),
+                config,
+                LaneRouter.byKeyHashCode(),
+                ignored -> {});
+        setup.close();
+
+        assertThrows(IllegalArgumentException.class, () -> new LaneConsumer<>(
+                Map.of(
+                        ConsumerConfig.GROUP_ID_CONFIG, "test-group",
+                        ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 4_294_967_297L),
+                new IntegerDeserializer(),
+                new StringDeserializer(),
+                List.of(TOPIC),
+                config,
+                LaneRouter.byKeyHashCode(),
+                ignored -> {}));
+    }
 
     @Test
     void preservesLaneOrderAndBoundsCrossLaneConcurrency() throws Exception {
@@ -490,6 +563,20 @@ class LaneConsumerTest {
                     return offset.offset();
                 }
             }
+        }
+    }
+
+    private static final class ClosingDeserializer<T> implements Deserializer<T> {
+        private int closeCalls;
+
+        @Override
+        public T deserialize(String topic, byte[] data) {
+            return null;
+        }
+
+        @Override
+        public void close() {
+            closeCalls++;
         }
     }
 }

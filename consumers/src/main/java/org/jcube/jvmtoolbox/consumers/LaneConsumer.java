@@ -1,5 +1,6 @@
 package org.jcube.jvmtoolbox.consumers;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -43,7 +44,7 @@ import org.apache.kafka.common.serialization.Deserializer;
  *
  * <p>{@link #close()} stops polling, interrupts active batches, closes the owned Kafka consumer, and
  * waits for the owner loop to terminate. It neither drains work nor performs a final commit. The
- * supplied deserializers are owned by the Kafka consumer; resources captured by the processor are not.
+ * setup owns the supplied deserializers but not resources captured by the processor.
  *
  * @param <K> Kafka key type
  * @param <V> Kafka value type
@@ -184,12 +185,14 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         } finally {
             lifecycle.compareAndSet(Lifecycle.RUNNING, Lifecycle.STOPPING);
             cancelAll();
-            if (consumer != null) {
-                try {
+            try {
+                if (consumer == null) {
+                    closeDeserializers();
+                } else {
                     consumer.close();
-                } catch (Throwable closeFailure) {
-                    failure = merge(failure, closeFailure);
                 }
+            } catch (Throwable closeFailure) {
+                failure = merge(failure, closeFailure);
             }
             activeConsumer.set(null);
             ownerThread = null;
@@ -202,9 +205,12 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
     /**
      * Stops this setup without draining or a final commit and waits for the owner loop to terminate.
      *
-     * <p>Closing before {@link #run()} prevents it from starting. If interrupted while waiting, this
-     * method still waits for consumer closure and restores the caller's interrupted status. Invoking
-     * this method on the owner thread requests shutdown without waiting on itself.
+     * <p>This method is idempotent. Closing before {@link #run()} prevents it from starting and closes
+     * the supplied deserializers. If interrupted while waiting, this method still waits for consumer
+     * closure and restores the caller's interrupted status. Invoking this method on the owner thread
+     * requests shutdown without waiting on itself.
+     *
+     * @throws RuntimeException if a supplied deserializer fails to close before {@code run()}
      */
     @Override
     public void close() {
@@ -212,7 +218,11 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
             Lifecycle current = lifecycle.get();
             if (current == Lifecycle.NEW) {
                 if (lifecycle.compareAndSet(Lifecycle.NEW, Lifecycle.TERMINATED)) {
-                    terminated.countDown();
+                    try {
+                        closeDeserializers();
+                    } finally {
+                        terminated.countDown();
+                    }
                     return;
                 }
             } else if (current == Lifecycle.RUNNING) {
@@ -566,6 +576,13 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         }
     }
 
+    private void closeDeserializers() {
+        var key = keyDeserializer;
+        var value = valueDeserializer;
+        try (key; value) {
+        }
+    }
+
     private static Map<String, Object> validatedProperties(
             Map<String, ?> supplied, ConsumerProcessingConfig config) {
         Objects.requireNonNull(supplied, "properties");
@@ -612,20 +629,26 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         if (value instanceof Boolean bool) {
             return bool;
         }
-        if (value instanceof String text
-                && (text.equalsIgnoreCase("true") || text.equalsIgnoreCase("false"))) {
-            return Boolean.parseBoolean(text);
+        if (value instanceof String text) {
+            String normalized = text.trim();
+            if (normalized.equalsIgnoreCase("true") || normalized.equalsIgnoreCase("false")) {
+                return Boolean.parseBoolean(normalized);
+            }
         }
         throw new IllegalArgumentException(name + " must be true or false");
     }
 
     private static int integerValue(Object value, String name) {
         if (value instanceof Number number) {
-            return number.intValue();
+            try {
+                return new BigDecimal(number.toString()).intValueExact();
+            } catch (NumberFormatException | ArithmeticException failure) {
+                throw new IllegalArgumentException(name + " must be an integer", failure);
+            }
         }
         if (value instanceof String text) {
             try {
-                return Integer.parseInt(text);
+                return Integer.parseInt(text.trim());
             } catch (NumberFormatException failure) {
                 throw new IllegalArgumentException(name + " must be an integer", failure);
             }

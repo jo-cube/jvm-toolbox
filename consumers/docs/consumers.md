@@ -53,13 +53,18 @@ try (var consumer = new LaneConsumer<>(
 }
 ```
 
-The library constructs, subscribes, polls, commits, and closes the Kafka consumer. `run()` may be
-called once and owns the calling thread. `close()` may be called from another thread; it stops polling,
-interrupts active batches, closes the consumer, and waits for the owner loop. Resources captured by
-the batch processor remain application-owned.
+The library owns the supplied deserializers and constructs, subscribes, polls, commits, and closes the
+Kafka consumer. `run()` may be called once and owns the calling thread. `close()` may be called from
+another thread; it stops polling, interrupts active batches, closes the consumer, and waits for the
+owner loop. Closing before `run()` closes the deserializers directly. Resources captured by the batch
+processor remain application-owned.
 
 `group.id` is required. Automatic commits must be absent or false. `max.poll.records` may be omitted;
 if supplied, it must equal `ConsumerProcessingConfig.maxPollRecords()`.
+
+All numeric processing limits must be positive. `maxPollRecords` must not exceed either in-flight
+limit so any complete poll response is guaranteed to fit. `maxBatchWait` may be zero; `pollTimeout`
+must be positive. Both durations must be representable in nanoseconds.
 
 ## Routing and lane ordering
 
