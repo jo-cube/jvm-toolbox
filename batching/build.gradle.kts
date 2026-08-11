@@ -4,7 +4,7 @@ plugins {
     id("me.champeau.jmh")
 }
 
-description = "Small, reusable JVM abstractions with precise contracts"
+description = "Bounded micro-batching and keyed batch loading"
 
 base {
     archivesName = "jvm-toolbox-batching"
