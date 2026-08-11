@@ -89,7 +89,8 @@ separate configured limit enforces `maxConcurrentBatches`.
 
 Completion is tracked only for offsets actually observed from each partition; offsets are never
 assumed contiguous. For observed offsets `100✓, 105✓, 109?, 120✓, 135✓`, the safe commit is `109`.
-When `109` completes, the commit may jump to the poll position after `135`.
+That commit carries `105`'s leader epoch when available, as Kafka requires for the previously consumed
+record. When `109` completes, the commit may jump to the poll position after `135`.
 
 The processor receives an unmodifiable ordered list. Returning means the whole batch succeeded.
 Throwing means the whole setup fails; there is no partial-success contract or built-in retry. Polling,

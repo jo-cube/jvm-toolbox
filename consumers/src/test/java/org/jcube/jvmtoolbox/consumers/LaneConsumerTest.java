@@ -15,6 +15,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -30,6 +31,8 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.internals.RecordHeaders;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -193,7 +196,8 @@ class LaneConsumerTest {
         try {
             assertTrue(blockedStarted.await(2, SECONDS));
             assertTrue(laterCompleted.await(2, SECONDS));
-            assertEquals(109, mock.awaitCommit(P0, 109));
+            OffsetAndMetadata frontier = mock.awaitCommitMetadata(P0, 109);
+            assertEquals(Optional.of(105), frontier.leaderEpoch());
             assertTrue(mock.commits.stream()
                     .flatMap(commit -> commit.values().stream())
                     .allMatch(offset -> offset.offset() <= 109));
@@ -459,7 +463,18 @@ class LaneConsumerTest {
 
     private static ConsumerRecord<Integer, String> record(
             int partition, long offset, int key, String value) {
-        return new ConsumerRecord<>(TOPIC, partition, offset, key, value);
+        return new ConsumerRecord<>(
+                TOPIC,
+                partition,
+                offset,
+                0,
+                TimestampType.CREATE_TIME,
+                -1,
+                -1,
+                key,
+                value,
+                new RecordHeaders(),
+                Optional.of(Math.toIntExact(offset)));
     }
 
     private static Thread start(
@@ -551,6 +566,11 @@ class LaneConsumerTest {
         }
 
         private long awaitCommit(TopicPartition partition, long expected) throws Exception {
+            return awaitCommitMetadata(partition, expected).offset();
+        }
+
+        private OffsetAndMetadata awaitCommitMetadata(
+                TopicPartition partition, long expected) throws Exception {
             long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
             while (true) {
                 long remaining = deadline - System.nanoTime();
@@ -560,7 +580,7 @@ class LaneConsumerTest {
                 assertTrue(commit != null, "timed out waiting for commit " + expected);
                 OffsetAndMetadata offset = commit.get(partition);
                 if (offset != null && offset.offset() == expected) {
-                    return offset.offset();
+                    return offset;
                 }
             }
         }

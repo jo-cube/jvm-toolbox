@@ -35,8 +35,9 @@ import org.apache.kafka.common.serialization.Deserializer;
  * within a lane never overlap; different lanes may execute concurrently on virtual threads.
  *
  * <p>Offsets are committed only to the first incomplete observed record in each partition, or to the
- * poll's next position when all observed records complete. Automatic commits are disabled. Batch,
- * routing, polling, tracking, and commit failures fail {@code run()}.
+ * poll's next position when all observed records complete. Partial-frontier commits carry the last
+ * completed record's leader epoch when available. Automatic commits are disabled. Batch, routing,
+ * polling, tracking, and commit failures fail {@code run()}.
  *
  * <p>Partition revocation invalidates any active mixed-partition batch containing a revoked record and
  * interrupts its virtual thread. Stale completions cannot update offsets. Interruption is cooperative,
@@ -423,7 +424,7 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
 
     private void advance(PartitionState partition) {
         while (!partition.offsets.isEmpty() && partition.offsets.getFirst().completed) {
-            partition.offsets.removeFirst();
+            partition.lastCompletedLeaderEpoch = partition.offsets.removeFirst().leaderEpoch;
             globalInFlight--;
         }
         OffsetAndMetadata candidate;
@@ -431,7 +432,8 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
             candidate = partition.observedPosition;
         } else {
             TrackedOffset first = partition.offsets.getFirst();
-            candidate = new OffsetAndMetadata(first.offset, first.leaderEpoch, "");
+            candidate = new OffsetAndMetadata(
+                    first.offset, partition.lastCompletedLeaderEpoch, "");
         }
         if (candidate != null && candidate.offset() > partition.committedOffset) {
             partition.commitCandidate = candidate;
@@ -761,6 +763,7 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         private final ArrayDeque<TrackedOffset> offsets = new ArrayDeque<>();
         private long lastObservedOffset = -1;
         private long committedOffset = -1;
+        private Optional<Integer> lastCompletedLeaderEpoch = Optional.empty();
         private OffsetAndMetadata observedPosition;
         private OffsetAndMetadata commitCandidate;
 
