@@ -4,162 +4,122 @@
 
 - JDK 25, without preview APIs
 - The checked-in Gradle wrapper
-- `just` for the short command aliases
-- Docker Compose only for PostgreSQL integration/performance work
+- `just` for short command aliases
+- Docker Compose only for batching PostgreSQL integration/performance work
 
-Production code is Java and the published `runtimeClasspath` must remain dependency-free. JUnit, JMH,
-HdrHistogram, PostgreSQL JDBC, and related tooling are isolated to test, benchmark, or performance
-source sets.
+The root is an unpublished Gradle aggregator. `batching` is the existing dependency-free artifact;
+`consumers` intentionally depends on and exposes the Apache Kafka client API. JUnit, JMH,
+HdrHistogram, PostgreSQL JDBC, and profiling dependencies remain outside production source sets.
 
 ## Repository map
 
 ```text
-src/main/java/       published API and runtime
-src/test/java/       behavior and concurrency contract tests
-src/jmh/java/        JMH mechanical benchmarks
-src/perf/java/       synthetic, profiling, and PostgreSQL tooling
-src/perf/postgres/   PostgreSQL schema and seed scripts
-docs/                maintained user and contributor documentation
-compose.yaml         local PostgreSQL environment
+batching/src/main/java/       batching published API and runtime
+batching/src/test/java/       batching behavior and concurrency tests
+batching/src/jmh/java/        JMH mechanical benchmarks
+batching/src/perf/            synthetic, profiling, and PostgreSQL tooling
+batching/docs/                batching and performance guides
+consumers/src/main/java/      consumers published API and runtime
+consumers/src/test/java/      consumer behavior and concurrency tests
+consumers/docs/               ordered-consumer guide
+docs/development.md           repository and publication workflow
+compose.yaml                  local PostgreSQL environment
 ```
 
-`BackendProfiler`, `BatchingProfiler`, reporters, resource probes, synthetic backends, and database
-adapters are experimental repository infrastructure. They are not part of the Maven publication.
+Repository-only profilers, reporters, probes, synthetic backends, and database adapters are not part
+of either Maven publication.
 
 ## Normal workflow
 
 ```text
-just test                 run unit and concurrency contract tests
-just check                compile all source sets, run tests, enforce Javadocs and runtime dependency policy
-just docs                 generate warning-free API Javadocs
-just publication-check    build binary/source/Javadoc artifacts, Maven POM, and Gradle metadata
+just test                 run all unit and concurrency contract tests
+just check                compile source sets, run tests, and enforce warning-free Javadocs
+just docs                 generate both artifacts' API Javadocs
+just publication-check    build artifacts, POMs, and Gradle metadata
 ```
 
-`just check` is the expected pre-commit command. It compiles the JMH and performance source sets but
-does not execute expensive benchmarks or require Docker.
-
-Performance commands are listed in [performance.md](performance.md). PostgreSQL unit-independent
-workflows use `postgres-up`, `postgres-seed`, the relevant `perf-postgres*` command, and
-`postgres-down`.
+`just check` is the expected pre-commit command. It compiles the batching JMH and performance source
+sets but does not execute expensive benchmarks or require Docker. Performance commands are documented
+in [performance.md](../batching/docs/performance.md).
 
 ## Contract and documentation ownership
 
-The published Java types and their Javadocs define the public surface. Behavior and concurrency tests
-freeze observable contracts. Maintained Markdown documentation should explain how to apply those
-contracts without introducing different semantics.
-
-Each maintained document has one primary job:
+Published Java types and Javadocs define the public surface. Behavior and concurrency tests freeze
+observable contracts. Maintained Markdown explains how to apply those contracts.
 
 | Document | Canonical subject |
 | --- | --- |
-| `README.md` | Project discovery, installation, abstraction choice, and the application lifecycle at a glance. |
-| `docs/batching.md` | Shared batching contracts, non-keyed processing, API-server integration, overload, and lifecycle. |
-| `docs/key-batch-loader.md` | Keyed backend integration, coalescing, missing values, fan-out, and cache scope. |
-| `docs/performance.md` | Measurement methodology, evidence, configuration workflow, and performance commands. |
-| `docs/development.md` | Repository workflow, contribution rules, documentation maintenance, and publication. |
-| `AGENTS.md` | Short routing and invariants for coding agents; it points to the maintained guides for details. |
+| `README.md` | Project discovery, installation, and artifact choice. |
+| `batching/docs/batching.md` | Shared batching contracts, non-keyed processing, admission, and lifecycle. |
+| `batching/docs/key-batch-loader.md` | Keyed processing, coalescing, missing values, fan-out, and cache scope. |
+| `batching/docs/performance.md` | Measurement methodology, evidence, and performance commands. |
+| `consumers/docs/consumers.md` | Routing, ordering, batching, offsets, backpressure, rebalance, and shutdown. |
+| `docs/development.md` | Repository, CI, documentation, and publication workflow. |
+| `AGENTS.md` | Short routing and invariants for coding agents. |
 
-When behavior changes, update the source Javadocs, focused behavior tests, and the one canonical guide
-in the same change. Link to shared explanations instead of copying them between guides. Keep examples
-small enough to audit, explicitly label framework placeholders, and show long-lived batching instances
-rather than creating one per request.
-
-Generated Javadocs under `build/docs/javadoc` and performance reports under `build/reports` are build
-artifacts, not maintained documentation.
+When behavior changes, update Javadocs, focused behavior tests, and the canonical guide together. Link
+to shared explanations rather than copying them. Generated Javadocs and reports under each module's
+`build/` directory are build artifacts, not maintained documentation.
 
 ## Engineering expectations
 
-- Keep public APIs smaller than their implementations and independent of queues, threads, schedulers,
-  JDBC, and monitoring frameworks.
-- Treat admission, timing, result correlation, failure, cancellation, concurrency bounds, and shutdown
-  as contracts.
-- Add behavior tests for observable guarantees and concurrency invariants. Do not chase coverage
-  percentages or test private structure.
+- Keep public APIs smaller than their implementations and independent of internal queues, threads,
+  schedulers, JDBC adapters, and monitoring frameworks.
+- Treat admission, timing, correlation, failure, cancellation, concurrency bounds, offsets,
+  rebalance fencing, commits, and shutdown as observable contracts where applicable.
 - Prefer deterministic clocks, latches, barriers, and semaphores over sleep-heavy concurrency tests.
 - Public Javadocs describe nullability, ownership, blocking, exceptions, lifecycle, and concurrency.
-  Comments explain only non-obvious invariants or memory/concurrency reasoning.
-- Measure performance changes with JMH or the appropriate system harness before changing production
-  internals. Do not add throughput thresholds to ordinary CI.
-- New toolbox features must be coherent reusable abstractions with standalone value, not miscellaneous
-  shared code or catch-all utility packages.
+- Measure performance changes with the appropriate batching JMH or system harness before changing
+  performance-sensitive internals. Do not add machine-specific thresholds to ordinary CI.
+- Add only coherent reusable abstractions with standalone value; do not add catch-all shared modules.
 
 ## Publication
 
-The `mavenJava` publication produces `io.github.jo-cube:jvm-toolbox` with binary, source, Javadoc,
-Gradle module, license, project, developer, and SCM metadata. Local builds use
-`0.0.0-SNAPSHOT`; pass `-PreleaseVersion=1.2.3` when a specific version is needed. The release
-workflow supplies this property from the published GitHub Release's `v1.2.3` tag, so release versions
-are not committed to the build file.
+The `mavenJava` publications produce:
 
-CI and release automation are deliberately separate:
+- `io.github.jo-cube:jvm-toolbox-batching` from `batching`.
+- `io.github.jo-cube:jvm-toolbox-consumers` from `consumers`.
+
+Both include binary, source, Javadoc, Gradle module, license, project, developer, and SCM metadata.
+Local builds use `0.0.0-SNAPSHOT`; pass `-PreleaseVersion=1.2.3` for a specific version. The release
+workflow derives that value from the published GitHub Release's `v1.2.3` tag.
+
+CI and release automation are separate:
 
 | Workflow | Trigger | Responsibility |
 | --- | --- | --- |
-| `CI` | Pull requests, pushes to `main`, manual dispatch | Run `check` and build publication metadata without release credentials. |
-| `Release` | Published GitHub Releases | Validate the release tag on `main`, repeat verification, then sign and publish through the Maven Central Portal. |
+| `CI` | Pull requests, pushes to `main`, manual dispatch | Run `check` and build both publications without release credentials. |
+| `Release` | Published GitHub Releases | Validate the release tag on `main`, verify, sign, and publish both artifacts. |
 
-The release workflow accepts tags such as `v1.2.3` and `v1.2.3-alpha.1`; Maven receives the version
-without the leading `v`. A Central release is immutable, so never move or reuse a published version
-tag.
+Release tags may look like `v1.2.3` or `v1.2.3-alpha.1`; Maven receives the value without the leading
+`v`. Central releases are immutable, so never move or reuse a published version tag.
 
 ### One-time GitHub and Maven Central setup
 
 1. Generate a user token in the [Maven Central Portal](https://central.sonatype.com/usertoken).
-2. Create a passphrase-protected PGP key, publish its public key to a Central-supported key server,
-   and export the armored private key:
-
-   ```text
-   gpg --gen-key
-   gpg --keyserver keyserver.ubuntu.com --send-keys KEY_ID
-   gpg --export-secret-keys --armor KEY_ID
-   ```
-
-3. Create a GitHub environment named `maven-central` and add these environment secrets:
-
-   | Secret | Value |
-   | --- | --- |
-   | `MAVEN_CENTRAL_USERNAME` | Username from the generated Central Portal user token. |
-   | `MAVEN_CENTRAL_PASSWORD` | Password from the generated Central Portal user token. |
-   | `SIGNING_KEY` | Complete armored private key, including the begin/end lines. |
-   | `SIGNING_PASSWORD` | Private-key passphrase. |
-
-4. Restrict the `maven-central` environment to tags matching `v*`. Requiring approval is useful for
-   early releases because the workflow publishes automatically after Central validates the bundle.
-5. Protect `main`: require pull requests and the `CI / verify` check, and restrict creation or update
-   of `v*` tags to maintainers.
+2. Create a passphrase-protected PGP key, publish its public key, and export the armored private key.
+3. Create a GitHub environment named `maven-central` with `MAVEN_CENTRAL_USERNAME`,
+   `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY`, and `SIGNING_PASSWORD` secrets.
+4. Restrict that environment to `v*` tags; approval is useful for early releases.
+5. Protect `main` and require the `CI / verify` check.
 
 ### Releasing
 
-Merge the feature branch through a pull request, update local `main`, then tag the exact commit:
+Tag the exact commit on `main`, push the tag, then create and publish its GitHub Release. Pushing the
+tag alone does not publish. The workflow validates that the tagged commit belongs to `main`, signs both
+artifacts, waits for Central validation, and releases the deployment.
 
-```text
-git switch main
-git pull --ff-only
-git tag -a v0.1.0-alpha.1 -m "v0.1.0-alpha.1"
-git push origin v0.1.0-alpha.1
-```
+`./gradlew publishToMavenLocal` publishes both modules for local consumer testing. A release-shaped
+local build can add `-PreleaseVersion=1.2.3` and Gradle signing credentials.
 
-Create a GitHub Release for that tag and publish it; pushing the tag alone does not publish to Maven
-Central. The release workflow rejects malformed tags and commits that are not contained in
-`origin/main`. After the protected environment is approved, it signs the artifacts, uploads a
-deployment, waits for Central validation, and releases it automatically. Maven Central synchronization
-can take additional time after the workflow succeeds.
+Before preparing a release:
 
-`./gradlew publishToMavenLocal` remains available for local consumer testing. For a release-shaped
-local artifact, use `./gradlew publishToMavenLocal -PreleaseVersion=1.2.3` and configure local signing
-credentials as described by Gradle's signing plugin.
-
-Before preparing a prerelease:
-
-1. Confirm the intended version and public API documentation.
+1. Confirm the version and public API documentation.
 2. Run `just check` and the smallest relevant performance or integration smoke workflow.
 3. Run `just publication-check`.
-4. Run `./gradlew dependencies --configuration runtimeClasspath` and confirm that production reports
-   no dependencies.
-5. Inspect the generated POM and binary, source, and Javadoc JARs under `build/`.
+4. Run `./gradlew :batching:dependencies --configuration runtimeClasspath` and confirm it has no
+   dependencies.
+5. Inspect both generated POMs and JAR sets under `batching/build/` and `consumers/build/`; the
+   consumers POM must declare `kafka-clients`.
 6. Use `publishToMavenLocal` when a separate consumer project should verify coordinates and Java 25
    metadata.
-
-Normal CI repeats correctness, warning-free Javadocs, source-set compilation, runtime dependency
-isolation, and publication artifact generation. It does not run Docker or assert performance
-thresholds.
