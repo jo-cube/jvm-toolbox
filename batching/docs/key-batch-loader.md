@@ -27,7 +27,7 @@ completed values.
 
 `maxBatchSize` and `maxPendingRequests` count caller submissions, not unique keys. One hundred callers
 for the same key consume one hundred pending slots even if the backend sees that key once. This makes
-capacity independent of duplicate rate and bounds retained caller state.
+capacity independent of duplicate rate and bounds caller state awaiting a backend outcome.
 
 ## PostgreSQL backend example
 

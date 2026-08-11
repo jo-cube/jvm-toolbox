@@ -21,6 +21,9 @@ import java.util.concurrent.TimeoutException;
  * its future exceptionally. Cancelling one future does not cancel work shared with another caller.
  * Successful cancellation notifies the coordinator, while capacity is released only after the
  * cancellation is observed or its dispatched batch retires.
+ * A batch with a terminal outcome releases pending capacity before its futures are completed, so a
+ * short, non-blocking dependent action may admit follow-up work even when capacity was full.
+ * Synchronous dependent actions still occupy that batch's backend-concurrency slot until they return.
  * The loader owns completion of returned futures; callers may observe, compose, wait for, or cancel
  * them, but must not complete them directly or forcibly replace their outcome.
  * This class is thread-safe; loading is asynchronous after admission, while admission itself may block
@@ -79,7 +82,8 @@ public final class KeyBatchLoader<K, V> implements AutoCloseable {
      *
      * <p>This method is idempotent and restores the calling thread's interrupted status after draining.
      * The loader does not close its processor or resources captured by it. Do not invoke this method
-     * from this loader's processor or observer callbacks.
+     * from this loader's processor, observer callbacks, or synchronous dependent actions on returned
+     * futures.
      */
     @Override
     public void close() {

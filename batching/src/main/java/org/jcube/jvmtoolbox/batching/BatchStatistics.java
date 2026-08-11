@@ -9,6 +9,8 @@ import java.util.concurrent.atomic.LongAdder;
  * <p>Snapshots are immutable and weakly consistent: concurrent callback updates may become visible
  * across fields at slightly different times.
  * Counters are cumulative for the lifetime of this collector and are not reset by {@link #snapshot()}.
+ * The incomplete-request gauge follows terminal observer callbacks, not admission-capacity
+ * bookkeeping, so replacement admissions may make it temporarily exceed a batcher's pending limit.
  */
 public final class BatchStatistics implements BatchObserver {
     private final LongAdder admittedRequests = new LongAdder();
@@ -122,7 +124,8 @@ public final class BatchStatistics implements BatchObserver {
      * @param keyedRequests keyed caller submissions considered for coalescing
      * @param uniqueKeys unique keys handed to keyed backends
      * @param coalescedRequests keyed submissions removed from backend work as duplicates
-     * @param incompleteRequests admitted futures not yet completed or cancelled
+     * @param incompleteRequests admitted futures not yet reflected by a terminal observer callback or
+     *     cancellation
      * @param batchesInFlight dispatched batches without a completion or failure callback
      * @param closed whether graceful draining has finished
      */

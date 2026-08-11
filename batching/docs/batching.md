@@ -172,7 +172,7 @@ completion but never interrupts a shared or already-dispatched backend invocatio
 | `maxBatchSize` | Maximum caller submissions in one backend invocation. | Measure the backend directly and choose a useful operating point rather than its largest accepted batch. |
 | `maxWait` | Age at which the oldest request in the forming batch makes it eligible. Zero disables intentional linger. | Spend only the portion of the latency budget justified by improved batch fill at low and moderate load. |
 | `maxConcurrentBatches` | Maximum processor invocations that may overlap. | Match a measured backend concurrency region and the application's share of the backend resource budget. |
-| `maxPendingRequests` | Maximum admitted requests whose work has not retired, including dispatched work. | Treat it as an explicit memory and backlog bound, not as the number of connected clients. |
+| `maxPendingRequests` | Maximum admitted requests whose work has not retired, including dispatched work. | Treat it as an explicit backend-facing backlog bound, not as the number of connected clients. |
 | `admissionPolicy` | Behavior when pending capacity is exhausted. | Choose from the caller execution model and overload policy, not throughput alone. |
 | `admissionTimeout` | Positive duration used only by `WAIT_WITH_TIMEOUT`. | Keep it within the caller's remaining deadline. |
 
@@ -202,6 +202,15 @@ request.
 `maxPendingRequests` counts all admitted work that has not retired, including work already handed to a
 processor. A large number of network connections therefore does not require an equally large pending
 limit; the server may keep connections open while the batcher enforces a smaller backend-facing bound.
+
+Once a batch has a validated result or failure, its pending capacity is released before its futures
+are completed. This lets a short, non-blocking dependent stage submit follow-up work even when capacity
+was full. Dependent stages must still avoid waiting for follow-up work or calling `close()`; use an
+asynchronous stage when the continuation may block.
+
+Synchronous dependent actions continue to occupy backend-concurrency slots. At most
+`maxBatchSize × maxConcurrentBatches` processed requests can therefore remain in completion delivery
+in addition to the configured pending capacity.
 
 ## Backend outcomes and failures
 
@@ -264,6 +273,11 @@ ignored so they cannot alter request results.
 admitted, rejected, cancelled, dispatched, successful, failed, and keyed/coalescing counters, plus
 current incomplete-request and in-flight-batch gauges and the closed state. Snapshots are weakly
 consistent while callbacks are concurrent and do not reset counters.
+
+`incompleteRequests` follows terminal observer callbacks rather than internal admission bookkeeping.
+Because processed batches release capacity before synchronous future actions finish, replacement
+admissions can make this weak gauge temporarily exceed `maxPendingRequests` even though the admission
+bound itself remains enforced.
 
 Use the unobserved constructor when instrumentation is not required. It avoids observer callbacks,
 statistics updates, and observation-specific timing work.

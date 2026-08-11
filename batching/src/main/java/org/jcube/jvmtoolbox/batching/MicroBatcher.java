@@ -20,6 +20,9 @@ import java.util.function.LongSupplier;
  * returned future affects only that submission and never interrupts or cancels a backend invocation.
  * Successful cancellation notifies the coordinator, while capacity is released only after the
  * cancellation is observed or its dispatched batch retires.
+ * A batch with a terminal outcome releases pending capacity before its futures are completed, so a
+ * short, non-blocking dependent action may admit follow-up work even when capacity was full.
+ * Synchronous dependent actions still occupy that batch's backend-concurrency slot until they return.
  * The batcher owns completion of returned futures; callers may observe, compose, wait for, or cancel
  * them, but must not complete them directly or forcibly replace their outcome.
  *
@@ -151,7 +154,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
      *
      * <p>This method is idempotent. If the calling thread is interrupted while waiting, draining still
      * completes and its interrupted status is restored before return. Do not invoke it from this
-     * batcher's processor or observer callbacks.
+     * batcher's processor, observer callbacks, or synchronous dependent actions on returned futures.
      */
     @Override
     public void close() {
@@ -326,13 +329,13 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         try {
             Thread.startVirtualThread(() -> process(live));
         } catch (Throwable failure) {
+            retire(live);
             if (observer == null) {
                 fail(live, failure);
             } else {
                 int failedRequests = failObserved(live, failure);
                 BatchObserverSupport.batchFailed(observer, live.size(), failedRequests, failure);
             }
-            retire(live);
             executionSlots.release();
         }
     }
@@ -349,6 +352,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     }
 
     private void process(List<Submission<I, O>> batch) {
+        boolean retired = false;
         try {
             var inputs = new ArrayList<I>(batch.size());
             for (var submission : batch) {
@@ -356,12 +360,17 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
             }
             List<BatchOutcome<O>> outcomes = processor.process(List.copyOf(inputs));
             validateOutcomes(outcomes, batch.size());
+            retire(batch);
+            retired = true;
             if (observer == null) {
                 complete(batch, outcomes);
             } else {
                 completeObserved(batch, outcomes);
             }
         } catch (Throwable failure) {
+            if (!retired) {
+                retire(batch);
+            }
             if (observer == null) {
                 fail(batch, failure);
             } else {
@@ -369,7 +378,6 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                 BatchObserverSupport.batchFailed(observer, batch.size(), failedRequests, failure);
             }
         } finally {
-            retire(batch);
             executionSlots.release();
         }
     }

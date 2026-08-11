@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -212,6 +213,22 @@ class MicroBatcherConcurrencyTest {
         } finally {
             releaseBackend.countDown();
             batcher.close();
+        }
+    }
+
+    @Test
+    void completionReleasesCapacityBeforeDependentActionsRun() throws Exception {
+        try (var batcher = new MicroBatcher<String, String>(config(1, 1, 1), inputs ->
+                List.of(BatchOutcome.success(inputs.getFirst())))) {
+            var chained = batcher.submit("first").thenCompose(ignored -> {
+                try {
+                    return batcher.submit("second");
+                } catch (Exception failure) {
+                    return CompletableFuture.failedFuture(failure);
+                }
+            });
+
+            assertEquals("second", chained.get(2, SECONDS));
         }
     }
 
