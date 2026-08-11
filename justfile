@@ -4,6 +4,9 @@ test:
 check:
     ./gradlew check
 
+integration-test:
+    ./gradlew :consumers:integrationTest
+
 docs:
     ./gradlew javadoc
 
@@ -39,6 +42,12 @@ perf-backend-profiler:
 
 perf-batching-profiler:
     ./gradlew :batching:perfBatchingProfiler
+
+kafka-up:
+    docker compose --profile kafka up -d --wait kafka
+
+kafka-down:
+    docker compose --profile kafka stop kafka
 
 postgres-up:
     docker compose up -d --wait
