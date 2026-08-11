@@ -29,3 +29,22 @@ jobs:
         run: ./gradlew check --warning-mode=fail
       - name: Verify publication metadata and artifacts
         run: ./gradlew assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication --warning-mode=fail
+
+  kafka-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: gradle/actions/wrapper-validation@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+      - name: Start Kafka
+        run: docker compose --profile kafka up -d --wait kafka
+      - name: Verify Kafka integration
+        run: ./gradlew :consumers:integrationTest --warning-mode=fail
+      - name: Stop Kafka
+        if: always()
+        run: docker compose --profile kafka down
