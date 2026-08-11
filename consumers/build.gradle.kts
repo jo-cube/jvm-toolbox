@@ -42,8 +42,19 @@ tasks.test {
     useJUnitPlatform()
 }
 
+testing {
+    suites {
+        register<JvmTestSuite>("integrationTest") {
+            useJUnitJupiter("6.1.2")
+            dependencies {
+                implementation(project())
+            }
+        }
+    }
+}
+
 tasks.named("check") {
-    dependsOn("javadoc")
+    dependsOn("javadoc", "integrationTestClasses")
 }
 
 publishing {
