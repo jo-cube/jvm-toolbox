@@ -259,7 +259,11 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
                 }
                 ConsumerRecords<K, V> records = consumer.poll(nextPollTimeout());
                 if (lifecycle.get() == Lifecycle.RUNNING) {
-                    accept(records);
+                    try {
+                        accept(records);
+                    } catch (WakeupException routingFailure) {
+                        return routingFailure;
+                    }
                 }
             } catch (WakeupException controlSignal) {
                 if (lifecycle.get() != Lifecycle.RUNNING) {

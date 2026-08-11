@@ -31,6 +31,7 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.serialization.Deserializer;
@@ -303,6 +304,29 @@ class LaneConsumerTest {
         assertSame(expected, failure.get());
         assertTrue(mock.commits.isEmpty());
         assertTrue(mock.closed());
+    }
+
+    @Test
+    void routerWakeupExceptionFailsTheSetup() throws Exception {
+        var mock = new TestConsumer<Integer, String>();
+        var expected = new WakeupException();
+        var setup = setup(mock, config(1, 1, 1, 2, 2, 1), record -> {
+            throw expected;
+        }, ignored -> {});
+        mock.initial(List.of(P0), List.of(record(0, 0, 1, "failed")));
+        var failure = new AtomicReference<Throwable>();
+        Thread runner = start(setup, failure);
+        try {
+            runner.join(Duration.ofSeconds(2));
+
+            assertFalse(runner.isAlive());
+            assertSame(expected, failure.get());
+            assertTrue(mock.commits.isEmpty());
+            assertTrue(mock.closed());
+        } finally {
+            setup.close();
+            runner.join();
+        }
     }
 
     @Test
