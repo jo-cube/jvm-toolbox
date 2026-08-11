@@ -2,7 +2,8 @@
 
 Performance is an engineering input for `jvm-toolbox`, not a portable guarantee. Results depend on the
 JDK, processor, memory, operating system, backend, workload, and measurement configuration. The
-repository keeps reproducible benchmarks and profilers; generated results live under `build/reports`
+repository keeps reproducible benchmarks and profilers; generated results live under
+`batching/build/reports`
 and are not committed as product claims.
 
 ## Measurement layers
@@ -25,7 +26,7 @@ lag remain visible.
 
 `BackendProfiler` and `BatchingProfiler` retain raw repetitions, aggregate histograms, stability data,
 resource diagnostics, and tolerance-aware Pareto analysis. They remain experimental repository tools
-under `src/perf`, not published APIs.
+under `batching/src/perf`, not published APIs.
 
 ## Current conclusions
 

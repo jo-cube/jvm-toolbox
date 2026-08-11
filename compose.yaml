@@ -9,8 +9,8 @@ services:
       - "${JVM_TOOLBOX_POSTGRES_PORT:-55432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
-      - ./src/perf/postgres:/perf:ro
-      - ./src/perf/postgres/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ./batching/src/perf/postgres:/perf:ro
+      - ./batching/src/perf/postgres/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jvm_toolbox -d jvm_toolbox"]
       interval: 1s

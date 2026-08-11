@@ -8,37 +8,37 @@ docs:
     ./gradlew javadoc
 
 publication-check:
-    ./gradlew assemble generatePomFileForMavenJavaPublication generateMetadataFileForMavenJavaPublication
+    ./gradlew assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication
 
 bench-quick:
-    ./gradlew jmh -PbenchmarkProfile=quick
+    ./gradlew :batching:jmh -PbenchmarkProfile=quick
 
 bench:
-    ./gradlew jmh -PbenchmarkProfile=full
+    ./gradlew :batching:jmh -PbenchmarkProfile=full
 
 bench-allocation:
-    ./gradlew jmh -PbenchmarkProfile=allocation
+    ./gradlew :batching:jmh -PbenchmarkProfile=allocation
 
 bench-jfr:
-    ./gradlew jmh -PbenchmarkProfile=jfr
+    ./gradlew :batching:jmh -PbenchmarkProfile=jfr
 
 perf-quick:
-    ./gradlew perf -PperfArgs=quick
+    ./gradlew :batching:perf -PperfArgs=quick
 
 perf:
-    ./gradlew perf -PperfArgs=full
+    ./gradlew :batching:perf -PperfArgs=full
 
 perf-custom *args:
-    ./gradlew perf -PperfArgs='custom {{args}}'
+    ./gradlew :batching:perf -PperfArgs='custom {{args}}'
 
 perf-jfr:
-    ./gradlew perfJfr
+    ./gradlew :batching:perfJfr
 
 perf-backend-profiler:
-    ./gradlew perfBackendProfiler
+    ./gradlew :batching:perfBackendProfiler
 
 perf-batching-profiler:
-    ./gradlew perfBatchingProfiler
+    ./gradlew :batching:perfBatchingProfiler
 
 postgres-up:
     docker compose up -d --wait
@@ -47,25 +47,25 @@ postgres-seed rows="100000":
     docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -v row_count={{rows}} -U jvm_toolbox -d jvm_toolbox -f /perf/seed.sql
 
 perf-postgres:
-    ./gradlew perfPostgres -PpostgresProfile=quick
+    ./gradlew :batching:perfPostgres -PpostgresProfile=quick
 
 perf-postgres-full:
-    ./gradlew perfPostgres -PpostgresProfile=full
+    ./gradlew :batching:perfPostgres -PpostgresProfile=full
 
 perf-postgres-jfr:
-    ./gradlew perfPostgresJfr
+    ./gradlew :batching:perfPostgresJfr
 
 perf-postgres-attribution:
-    ./gradlew perfPostgresAttribution
+    ./gradlew :batching:perfPostgresAttribution
 
 perf-postgres-attribution-jfr:
-    ./gradlew perfPostgresAttributionJfr
+    ./gradlew :batching:perfPostgresAttributionJfr
 
 perf-postgres-batching-profiler:
-    ./gradlew perfPostgresBatchingProfiler
+    ./gradlew :batching:perfPostgresBatchingProfiler
 
 postgres-plan:
-    ./gradlew perfPostgres -PpostgresProfile=plan
+    ./gradlew :batching:perfPostgres -PpostgresProfile=plan
 
 postgres-down:
     docker compose down
