@@ -134,8 +134,6 @@ public final class PostgresBatchingProfilerHarness {
                     || result.admittedRequests() != result.completedRequests()
                     || result.failedRequests() != 0
                     || result.missingRequests() != 0
-                    || result.maximumPendingRequests()
-                            > result.experiment().config().maxPendingRequests()
                     || result.maximumBackendConcurrency()
                             > result.experiment().config().maxConcurrentBatches()
                     || result.latencies().endToEnd().count() != result.completedRequests()

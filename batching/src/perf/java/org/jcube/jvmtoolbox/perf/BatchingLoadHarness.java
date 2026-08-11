@@ -542,13 +542,15 @@ record RunResult(
 
     void validate() {
         long rejected = metrics.capacityRejected() + metrics.timedOut() + metrics.closedRejected();
+        long maximumObservedPending = scenario.capacity()
+                + (long) scenario.batchSize() * scenario.maxConcurrentBatches();
         if (metrics.unexpected() != null) {
             throw new IllegalStateException("unexpected workload failure", metrics.unexpected());
         }
         if (concurrencyViolations != 0
                 || maximumBackendConcurrency > scenario.maxConcurrentBatches()
                 || metrics.maxInFlight() > scenario.maxConcurrentBatches()
-                || metrics.maxPending() > scenario.capacity()
+                || metrics.maxPending() > maximumObservedPending
                 || metrics.finalPending() != 0
                 || metrics.finalInFlight() != 0
                 || !metrics.closed()
@@ -556,7 +558,8 @@ record RunResult(
                 || metrics.admitted() != metrics.dispatchedRequests()
                 || metrics.admitted() != metrics.completed()
                 || metrics.batches() != metrics.sizeTriggered() + metrics.timeTriggered()) {
-            throw new IllegalStateException("workload invariants failed for " + scenario.name());
+            throw new IllegalStateException(
+                    "workload invariants failed for " + scenario.name() + ": " + metrics);
         }
     }
 

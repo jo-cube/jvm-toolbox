@@ -664,6 +664,9 @@ final class BatchingProfilerRuntime {
             }
             long admittedCount = admitted.sum();
             long completedCount = completed.sum();
+            long maximumObservedPending = experiment.config().maxPendingRequests()
+                    + (long) experiment.config().maxBatchSize()
+                            * experiment.config().maxConcurrentBatches();
             if (admittedCount != completedCount
                     || completedCount != successful.sum() + missing.sum() + failed.sum()
                     || dispatched.sum() != admittedCount
@@ -671,7 +674,7 @@ final class BatchingProfilerRuntime {
                     || offered.sum() != admittedCount + rejected.sum() + timedOut.sum()
                     || pending.get() != 0
                     || backendActive != 0
-                    || maxPending.get() > experiment.config().maxPendingRequests()
+                    || maxPending.get() > maximumObservedPending
                     || maxBackendActive > experiment.config().maxConcurrentBatches()) {
                 throw new IllegalStateException("batching profiler accounting invariant failed");
             }

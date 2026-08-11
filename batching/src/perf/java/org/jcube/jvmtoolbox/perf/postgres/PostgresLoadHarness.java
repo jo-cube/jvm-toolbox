@@ -1128,6 +1128,8 @@ record DbRunResult(
     void validate() {
         long refused = metrics.rejected() + metrics.timedOut();
         boolean loader = scenario.mode() != PostgresLoadHarness.Mode.DIRECT;
+        long maximumObservedPending = scenario.capacity()
+                + (long) scenario.batchSize() * scenario.databaseConcurrency();
         if (metrics.unexpected() != null) {
             throw new IllegalStateException("unexpected PostgreSQL workload failure", metrics.unexpected());
         }
@@ -1140,7 +1142,7 @@ record DbRunResult(
                 || metrics.maxDatabaseActive() > scenario.databaseConcurrency()
                 || metrics.finalDatabaseActive() != 0
                 || loader
-                        && (metrics.maxPending() > scenario.capacity()
+                        && (metrics.maxPending() > maximumObservedPending
                                 || metrics.maxInFlight() > scenario.databaseConcurrency()
                                 || metrics.finalPending() != 0
                                 || metrics.finalInFlight() != 0

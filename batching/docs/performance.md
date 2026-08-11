@@ -92,6 +92,9 @@ serialization, result-correlation, completion, network, and frontend scheduling 
 Use `BatchStatistics` or a custom observer to verify admission, rejection, batch size, in-flight work,
 failures, and keyed coalescing in the real application. The built-in statistics deliberately omit
 latency histograms; application monitoring or repository profilers should record latency where needed.
+Pending samples in the repository reports are observer-side incomplete counts, so they may briefly
+exceed configured admission capacity while synchronous future actions finish; admission outcomes and
+the focused capacity tests verify the actual bound.
 
 JMH identifies mechanical costs and regression candidates but does not establish end-to-end latency
 or sustainable offered load. Use the synthetic and PostgreSQL harnesses for those questions, and

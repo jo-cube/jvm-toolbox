@@ -166,8 +166,6 @@ public final class BatchingProfilerHarness {
                     || result.latencies().preDispatch().count() != result.admittedRequests()
                     || result.latencies().backend().count() != result.completedRequests()
                     || result.latencies().completion().count() != result.completedRequests()
-                    || result.maximumPendingRequests()
-                            > result.experiment().config().maxPendingRequests()
                     || result.maximumBackendConcurrency()
                             > result.experiment().config().maxConcurrentBatches()
                     || result.backendConcurrencyUtilization() < 0
@@ -212,7 +210,7 @@ public final class BatchingProfilerHarness {
                 || wait.rejectedRequests() != 0
                 || wait.admissionTimeouts() != 0
                 || wait.maximumPendingRequests()
-                        != wait.experiment().config().maxPendingRequests()
+                        < wait.experiment().config().maxPendingRequests()
                 || wait.openLoopStability().orElseThrow().status()
                         != BatchingProfiler.OpenLoopStatus.BOUNDED_OVERLOAD
                 || slow.latencies().backend().p99() <= high.latencies().backend().p99() * 3
