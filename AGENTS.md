@@ -25,6 +25,7 @@ batching/src/perf/            system profilers, loads, and PostgreSQL tooling
 batching/docs/                batching and performance guides
 consumers/src/main/java/      consumers published API and runtime
 consumers/src/test/java/      consumer contract and concurrency tests
+consumers/src/integrationTest/ broker-backed consumer integration tests
 consumers/docs/               ordered-consumer guide
 docs/development.md           repository, CI, and publication workflows
 ```
@@ -54,6 +55,7 @@ If documentation and source disagree, investigate and update all affected contra
 ```text
 just test                 unit and concurrency tests
 just check                normal full verification, including Javadocs and source-set compilation
+just integration-test     broker-backed consumer integration tests; requires Kafka
 just docs                 warning-free public Javadocs
 just publication-check    publication artifacts, POMs, and Gradle metadata
 just bench-quick          quick batching JMH smoke run

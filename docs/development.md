@@ -5,7 +5,7 @@
 - JDK 25, without preview APIs
 - The checked-in Gradle wrapper
 - `just` for short command aliases
-- Docker Compose only for batching PostgreSQL integration/performance work
+- Docker Compose for consumer Kafka integration and batching PostgreSQL performance work
 
 The root is an unpublished Gradle aggregator. `batching` is the existing dependency-free artifact;
 `consumers` intentionally depends on and exposes the Apache Kafka client API. JUnit, JMH,
@@ -21,9 +21,10 @@ batching/src/perf/            synthetic, profiling, and PostgreSQL tooling
 batching/docs/                batching and performance guides
 consumers/src/main/java/      consumers published API and runtime
 consumers/src/test/java/      consumer behavior and concurrency tests
+consumers/src/integrationTest/ broker-backed consumer integration tests
 consumers/docs/               ordered-consumer guide
 docs/development.md           repository and publication workflow
-compose.yaml                  local PostgreSQL environment
+compose.yaml                  local Kafka and PostgreSQL environments
 ```
 
 Repository-only profilers, reporters, probes, synthetic backends, and database adapters are not part
@@ -39,8 +40,24 @@ just publication-check    build artifacts, POMs, and Gradle metadata
 ```
 
 `just check` is the expected pre-commit command. It compiles the batching JMH and performance source
-sets but does not execute expensive benchmarks or require Docker. Performance commands are documented
-in [performance.md](../batching/docs/performance.md).
+sets and the consumer integration-test source set, but does not execute external-system workflows or
+require Docker. Performance commands are documented in
+[performance.md](../batching/docs/performance.md).
+
+## Kafka integration
+
+Kafka provisioning and test execution are independent:
+
+```text
+just kafka-up
+just integration-test
+just kafka-down
+```
+
+The Gradle `integrationTest` suite expects Kafka at `localhost:59092`; it does not manage Docker.
+Set `JVM_TOOLBOX_KAFKA_PORT` to change the Compose host port, or
+`JVM_TOOLBOX_KAFKA_BOOTSTRAP_SERVERS` to run the suite against another broker. CI provisions the
+pinned Kafka service separately and runs the suite as its own job.
 
 ## Contract and documentation ownership
 
@@ -88,7 +105,7 @@ CI and release automation are separate:
 
 | Workflow | Trigger | Responsibility |
 | --- | --- | --- |
-| `CI` | Pull requests, pushes to `main`, manual dispatch | Run `check` and build both publications without release credentials. |
+| `CI` | Pull requests, pushes to `main`, manual dispatch | Run `check`, Kafka integration tests, and build both publications without release credentials. |
 | `Release` | Published GitHub Releases | Validate the release tag on `main`, verify, sign, and publish both artifacts. |
 
 Release tags may look like `v1.2.3` or `v1.2.3-alpha.1`; Maven receives the value without the leading
@@ -101,7 +118,7 @@ Release tags may look like `v1.2.3` or `v1.2.3-alpha.1`; Maven receives the valu
 3. Create a GitHub environment named `maven-central` with `MAVEN_CENTRAL_USERNAME`,
    `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY`, and `SIGNING_PASSWORD` secrets.
 4. Restrict that environment to `v*` tags; approval is useful for early releases.
-5. Protect `main` and require the `CI / verify` check.
+5. Protect `main` and require the `CI / verify` and `CI / kafka-integration` checks.
 
 ### Releasing
 
