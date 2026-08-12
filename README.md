@@ -1,106 +1,65 @@
 # jvm-toolbox
 
-`jvm-toolbox` is a Java library for small, reusable JVM abstractions with precise contracts,
+`jvm-toolbox` is a Java 25 library for small, reusable JVM abstractions with precise contracts,
 behavior-first tests, and measured performance. It is intentionally not a collection of unrelated
 helpers.
 
-The first prerelease contains bounded micro-batching and keyed batch loading. The published runtime
-uses only the JDK and requires Java 25 or later.
+## Artifacts
 
-## Installation
+| Artifact | Use it for | Runtime dependencies |
+| --- | --- | --- |
+| `jvm-toolbox-batching` | Bounded micro-batching and keyed batch loading | JDK only |
+| `jvm-toolbox-consumers` | Ordered, parallel Apache Kafka record processing | Apache Kafka client |
 
 Gradle:
 
 ```kotlin
 dependencies {
-    implementation("io.github.jo-cube:jvm-toolbox:VERSION")
+    implementation("io.github.jo-cube:jvm-toolbox-batching:VERSION")
+    implementation("io.github.jo-cube:jvm-toolbox-consumers:VERSION")
 }
 ```
 
 Maven:
 
 ```xml
-<dependency>
-  <groupId>io.github.jo-cube</groupId>
-  <artifactId>jvm-toolbox</artifactId>
-  <version>VERSION</version>
-</dependency>
+<dependencies>
+  <dependency>
+    <groupId>io.github.jo-cube</groupId>
+    <artifactId>jvm-toolbox-batching</artifactId>
+    <version>VERSION</version>
+  </dependency>
+  <dependency>
+    <groupId>io.github.jo-cube</groupId>
+    <artifactId>jvm-toolbox-consumers</artifactId>
+    <version>VERSION</version>
+  </dependency>
+</dependencies>
 ```
 
-Published GitHub Releases are published to Maven Central. Replace `VERSION` with a released version.
+Add only the artifact you use. Published GitHub Releases are published to Maven Central.
 
-## Batching tools
+## Batching
 
-| Tool | Use it when | Backend receives |
-| --- | --- | --- |
-| `MicroBatcher<I, O>` | Every request is an independent positional operation, such as a write, bulk RPC, or inference call. | An ordered `List<I>` and returns one `BatchOutcome<O>` per position. |
-| `KeyBatchLoader<K, V>` | Requests are lookups and equal keys should share work within a batching window. | A `Set<K>` of unique keys and returns a map of found or failed keys. |
+`MicroBatcher<I, O>` batches independent positional operations. `KeyBatchLoader<K, V>` additionally
+coalesces equal lookup keys within a batching window. Both provide bounded admission and backend
+concurrency with explicit failure, cancellation, shutdown, and observation contracts.
 
-Both tools provide bounded pending capacity, explicit admission policies, bounded backend
-concurrency, independent cancellation, graceful draining, per-item failures, and opt-in observation.
-`KeyBatchLoader` additionally distinguishes missing values with `Optional.empty()` and never acts as a
-persistent cache.
+See [batching](batching/docs/batching.md) and [key batch loading](batching/docs/key-batch-loader.md).
 
-## Application shape
+## Ordered consumers
 
-```text
-concurrent callers -> bounded admission -> batch formation
-                                      -> bounded backend calls -> independent futures
-```
+`LaneConsumer<K, V>` owns one Kafka consumer and fans records from its assigned partitions into a
+configurable number of ordered logical lanes. Each lane forms independent micro-batches; lanes run in
+parallel on virtual threads, subject to a separate concurrency limit. Sparse observed offsets are
+committed only through the safe completion frontier.
 
-A batching instance is normally a long-lived application component for one logical backend
-operation. Create it during application startup, share it across requests, stop frontend admission
-during shutdown, close the batcher so admitted work drains, and only then close its backend resources.
-Do not create and close a batcher for every request.
+The setup deliberately provides at-least-once delivery, fail-fast processing, bounded buffering,
+cooperative cancellation on rebalance, and no retry or graceful drain framework. Downstream effects
+must be idempotent because interruption cannot guarantee that old work stops before reassignment.
 
-Limits apply per instance. If several batchers or application replicas use the same backend, account
-for their combined concurrency when sizing that backend.
-
-## Minimal `MicroBatcher` use
-
-```java
-var config = new BatchingConfig(
-        128,
-        Duration.ofNanos(500_000),
-        8,
-        16_384,
-        AdmissionPolicy.REJECT,
-        Duration.ZERO);
-
-BatchProcessor<Command, Result> backend = commands -> {
-    List<Result> results = client.executeBatch(commands); // same order and size
-    return results.stream().map(BatchOutcome::success).toList();
-};
-
-// Keep this instance as part of application state.
-var batcher = new MicroBatcher<>(config, backend);
-
-CompletableFuture<Result> result = batcher.submit(command);
-CompletionStage<ApiResponse> response = result.thenApply(ApiResponse::ok);
-
-// During application shutdown, after stopping new requests:
-batcher.close();
-```
-
-Admission occurs synchronously inside `submit`; processing and completion are asynchronous after
-admission. Event-loop servers should normally use `REJECT` and translate overload into an application
-response. Virtual-thread handlers may use waiting admission or blocking completion when that
-programming model is preferred.
-
-See [batching](docs/batching.md) for a complete non-keyed JDBC backend, API-server integration,
-configuration, failure, cancellation, shutdown, and observation guidance. See [key batch
-loading](docs/key-batch-loader.md) for a PostgreSQL lookup backend and keyed semantics.
-
-## Documentation
-
-- [Batching and API-server integration](docs/batching.md)
-- [Key batch loading and backend integration](docs/key-batch-loader.md)
-- [Performance evidence and configuration methodology](docs/performance.md)
-- [Development, documentation, and release workflows](docs/development.md)
-- Generated API Javadocs under `build/docs/javadoc` after running `just docs`
-
-Repository-only JMH, synthetic-load, profiling, and PostgreSQL tooling support development. They are
-not part of the published artifact.
+See [ordered consumers](consumers/docs/consumers.md) for routing, lifecycle, backpressure, offset, and
+rebalance contracts.
 
 ## Development
 
@@ -108,12 +67,17 @@ Use JDK 25 and the checked-in Gradle wrapper:
 
 ```text
 just test                 # behavior tests
-just check                # tests, Javadocs, source-set compilation, dependency policy
-just bench-quick          # short JMH smoke run
-just perf-quick           # synthetic system smoke run
-just publication-check    # publication artifacts, POM, and Gradle metadata
+just check                # tests, Javadocs, and source-set compilation
+just bench-quick          # batching JMH smoke run
+just perf-quick           # batching system smoke run
+just publication-check    # publication artifacts and metadata
 ```
 
-Longer performance and PostgreSQL workflows are documented in [performance.md](docs/performance.md).
+The repository is a Gradle multi-project build. Published code lives in `batching` and `consumers`;
+the root project is an unpublished build aggregator. See [development](docs/development.md) and
+[performance](batching/docs/performance.md).
 
 Licensed under the [MIT License](LICENSE).
+
+Apache Kafka, Kafka, and Apache are trademarks of the Apache Software Foundation. This project is not
+affiliated with or endorsed by the Apache Software Foundation.
