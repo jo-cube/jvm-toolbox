@@ -54,7 +54,7 @@ If documentation and source disagree, investigate and update all affected contra
 
 ```text
 just test                 unit and concurrency tests
-just check                normal full verification, including Javadocs and source-set compilation
+just check                full verification, including warning-free Java and Javadocs
 just integration-test     broker-backed consumer integration tests; requires Kafka
 just docs                 warning-free public Javadocs
 just publication-check    publication artifacts, POMs, and Gradle metadata

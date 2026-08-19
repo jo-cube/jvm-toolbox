@@ -2,16 +2,16 @@ test:
     ./gradlew test
 
 check:
-    ./gradlew check
+    ./gradlew check --warning-mode=fail
 
 integration-test:
-    ./gradlew :consumers:integrationTest
+    ./gradlew :consumers:integrationTest --warning-mode=fail
 
 docs:
     ./gradlew javadoc
 
 publication-check:
-    ./gradlew assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication
+    ./gradlew assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication --warning-mode=fail
 
 bench-quick:
     ./gradlew :batching:jmh -PbenchmarkProfile=quick

@@ -151,6 +151,7 @@ class MicroBatcherAdmissionTest {
     }
 
     @Test
+    @SuppressWarnings("try")
     void cancellationWakesTheCoordinatorAndReleasesCapacity() throws Exception {
         var clockCalls = new AtomicInteger();
         var coordinatorWaiting = new CountDownLatch(1);
