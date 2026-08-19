@@ -15,7 +15,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.LongSupplier;
+import java.util.regex.Pattern;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -30,9 +32,10 @@ import org.apache.kafka.common.serialization.Deserializer;
 /**
  * Consumes Kafka records into deterministic ordered lanes and processes micro-batches in parallel.
  *
- * <p>{@link #run()} is a blocking call and exclusively owns consumer polling, assignment, flow
- * control, and commits. A record's non-null key is routed to one logical lane. Processor invocations
- * within a lane never overlap; different lanes may execute concurrently on virtual threads.
+ * <p>{@link #run()} is a blocking call and exclusively owns consumer subscription, polling,
+ * assignment, flow control, and commits. A record's non-null key is routed to one logical lane.
+ * Processor invocations within a lane never overlap; different lanes may execute concurrently on
+ * virtual threads.
  *
  * <p>Offsets are committed only to the first incomplete observed record in each partition, or to the
  * poll's next position when all observed records complete. Partial-frontier commits carry the last
@@ -70,7 +73,7 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
     private final Map<String, Object> properties;
     private final Deserializer<K> keyDeserializer;
     private final Deserializer<V> valueDeserializer;
-    private final List<String> topics;
+    private final BiConsumer<Consumer<K, V>, ConsumerRebalanceListener> subscription;
     private final LaneRouter<K, V> router;
     private final ConsumerBatchProcessor<K, V> processor;
     private final ConsumerFactory<K, V> consumerFactory;
@@ -119,7 +122,42 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
                 properties,
                 keyDeserializer,
                 valueDeserializer,
-                topics,
+                topicSubscription(topics),
+                config,
+                router,
+                processor,
+                KafkaConsumer::new,
+                System::nanoTime);
+    }
+
+    /**
+     * Creates a consumer setup using Kafka's regular-expression topic subscription. The Kafka
+     * consumer is constructed when {@link #run()} begins.
+     *
+     * @param properties Kafka consumer properties; {@code group.id} must be present, automatic commit
+     *     must be absent or false, and {@code max.poll.records}, if present, must match {@code config}
+     * @param keyDeserializer owned key deserializer
+     * @param valueDeserializer owned value deserializer
+     * @param topicPattern topic-name pattern passed to Kafka
+     * @param config processing and buffering limits
+     * @param router deterministic logical-lane router
+     * @param processor ordered batch operation
+     * @throws IllegalArgumentException for invalid or conflicting consumer properties
+     * @throws NullPointerException if any argument is {@code null}
+     */
+    public LaneConsumer(
+            Map<String, ?> properties,
+            Deserializer<K> keyDeserializer,
+            Deserializer<V> valueDeserializer,
+            Pattern topicPattern,
+            ConsumerProcessingConfig config,
+            LaneRouter<K, V> router,
+            ConsumerBatchProcessor<K, V> processor) {
+        this(
+                properties,
+                keyDeserializer,
+                valueDeserializer,
+                patternSubscription(topicPattern),
                 config,
                 router,
                 processor,
@@ -137,11 +175,33 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
             ConsumerBatchProcessor<K, V> processor,
             ConsumerFactory<K, V> consumerFactory,
             LongSupplier nanoClock) {
+        this(
+                properties,
+                keyDeserializer,
+                valueDeserializer,
+                topicSubscription(topics),
+                config,
+                router,
+                processor,
+                consumerFactory,
+                nanoClock);
+    }
+
+    private LaneConsumer(
+            Map<String, ?> properties,
+            Deserializer<K> keyDeserializer,
+            Deserializer<V> valueDeserializer,
+            BiConsumer<Consumer<K, V>, ConsumerRebalanceListener> subscription,
+            ConsumerProcessingConfig config,
+            LaneRouter<K, V> router,
+            ConsumerBatchProcessor<K, V> processor,
+            ConsumerFactory<K, V> consumerFactory,
+            LongSupplier nanoClock) {
         this.config = Objects.requireNonNull(config, "config");
         this.properties = validatedProperties(properties, config);
         this.keyDeserializer = Objects.requireNonNull(keyDeserializer, "keyDeserializer");
         this.valueDeserializer = Objects.requireNonNull(valueDeserializer, "valueDeserializer");
-        this.topics = validatedTopics(topics);
+        this.subscription = Objects.requireNonNull(subscription, "subscription");
         this.router = Objects.requireNonNull(router, "router");
         this.processor = Objects.requireNonNull(processor, "processor");
         this.consumerFactory = Objects.requireNonNull(consumerFactory, "consumerFactory");
@@ -178,7 +238,7 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
             consumer = consumerFactory.create(properties, keyDeserializer, valueDeserializer);
             activeConsumer.set(consumer);
             if (lifecycle.get() == Lifecycle.RUNNING) {
-                consumer.subscribe(topics, new AssignmentListener(consumer));
+                subscription.accept(consumer, new AssignmentListener(consumer));
                 failure = runLoop(consumer);
             }
         } catch (Throwable startFailure) {
@@ -636,6 +696,18 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
             throw new IllegalArgumentException("topics must not be empty");
         }
         return List.copyOf(copy);
+    }
+
+    private static <K, V> BiConsumer<Consumer<K, V>, ConsumerRebalanceListener> topicSubscription(
+            Collection<String> topics) {
+        List<String> validated = validatedTopics(topics);
+        return (consumer, listener) -> consumer.subscribe(validated, listener);
+    }
+
+    private static <K, V> BiConsumer<Consumer<K, V>, ConsumerRebalanceListener> patternSubscription(
+            Pattern topicPattern) {
+        Objects.requireNonNull(topicPattern, "topicPattern");
+        return (consumer, listener) -> consumer.subscribe(topicPattern, listener);
     }
 
     private static boolean booleanValue(Object value, String name) {

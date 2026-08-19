@@ -59,6 +59,9 @@ another thread; it stops polling, interrupts active batches, closes the consumer
 owner loop. Closing before `run()` closes the deserializers directly. Resources captured by the batch
 processor remain application-owned.
 
+Pass a `Pattern` instead of the topic collection to use Kafka's regular-expression subscription, for
+example `Pattern.compile("invoice-.*")` when matching topics may be created after the consumer starts.
+
 `group.id` is required. Automatic commits must be absent or false. `max.poll.records` may be omitted;
 if supplied, it must equal `ConsumerProcessingConfig.maxPollRecords()`.
 

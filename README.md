@@ -51,8 +51,9 @@ See [batching](batching/docs/batching.md) and [key batch loading](batching/docs/
 
 `LaneConsumer<K, V>` owns one Kafka consumer and fans records from its assigned partitions into a
 configurable number of ordered logical lanes. Each lane forms independent micro-batches; lanes run in
-parallel on virtual threads, subject to a separate concurrency limit. Sparse observed offsets are
-committed only through the safe completion frontier.
+parallel on virtual threads, subject to a separate concurrency limit. Fixed topic collections and
+regular-expression topic subscriptions are supported. Sparse observed offsets are committed only
+through the safe completion frontier.
 
 The setup deliberately provides at-least-once delivery, fail-fast processing, bounded buffering,
 cooperative cancellation on rebalance, and no retry or graceful drain framework. Downstream effects
