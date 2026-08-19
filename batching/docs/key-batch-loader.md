@@ -6,7 +6,8 @@ backend receives a set of unique keys.
 
 Use it when the backend can fetch several keys together and equal keys should share work within one
 batching window. Use [MicroBatcher](batching.md) when requests are positional operations that must
-remain independent.
+remain independent. Use [SingleFlight](single-flight.md) when equal keys should share one operation
+for its full lifetime and the backend does not need batching.
 
 ```text
 logical callers:   A  A  B  C  A

@@ -229,7 +229,8 @@ The processor must return one non-null `BatchOutcome<O>` per input in the same o
 | Null list, null outcome, or wrong outcome count | The whole batch fails with `IllegalStateException`. |
 
 Equal inputs are independent positions and are never deduplicated. If duplicate-key coalescing and
-missing values are required, use `KeyBatchLoader`.
+missing values are required within a formed batch, use `KeyBatchLoader`. If equal keys should share an
+operation for its full lifetime without batching, use [`SingleFlight`](single-flight.md).
 
 ## Cancellation
 

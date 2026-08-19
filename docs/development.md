@@ -69,6 +69,7 @@ observable contracts. Maintained Markdown explains how to apply those contracts.
 | `README.md` | Project discovery, installation, and artifact choice. |
 | `batching/docs/batching.md` | Shared batching contracts, non-keyed processing, admission, and lifecycle. |
 | `batching/docs/key-batch-loader.md` | Keyed processing, coalescing, missing values, fan-out, and cache scope. |
+| `batching/docs/single-flight.md` | Full-flight request coalescing, cancellation, failure, and cache scope. |
 | `batching/docs/performance.md` | Measurement methodology, evidence, and performance commands. |
 | `consumers/docs/consumers.md` | Routing, ordering, batching, offsets, backpressure, rebalance, and shutdown. |
 | `docs/development.md` | Repository, CI, documentation, and publication workflow. |

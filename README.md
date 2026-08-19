@@ -8,7 +8,7 @@ helpers.
 
 | Artifact | Use it for | Runtime dependencies |
 | --- | --- | --- |
-| `jvm-toolbox-batching` | Bounded micro-batching and keyed batch loading | JDK only |
+| `jvm-toolbox-batching` | Batching, keyed loading, and request coalescing | JDK only |
 | `jvm-toolbox-consumers` | Ordered, parallel Apache Kafka record processing | Apache Kafka client |
 
 Gradle:
@@ -39,13 +39,17 @@ Maven:
 
 Add only the artifact you use. Published GitHub Releases are published to Maven Central.
 
-## Batching
+## Batching and request coalescing
 
 `MicroBatcher<I, O>` batches independent positional operations. `KeyBatchLoader<K, V>` additionally
 coalesces equal lookup keys within a batching window. Both provide bounded admission and backend
 concurrency with explicit failure, cancellation, shutdown, and observation contracts.
 
-See [batching](batching/docs/batching.md) and [key batch loading](batching/docs/key-batch-loader.md).
+`SingleFlight<K, V>` instead coalesces equal keys for the full lifetime of an asynchronous operation.
+It has no batching, caching, admission, executor, or lifecycle machinery.
+
+See [batching](batching/docs/batching.md), [key batch loading](batching/docs/key-batch-loader.md), and
+[single-flight request coalescing](batching/docs/single-flight.md).
 
 ## Ordered consumers
 

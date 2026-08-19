@@ -42,6 +42,8 @@ Read the smallest maintained guide that covers the task:
   observability.
 - `batching/docs/key-batch-loader.md`: keyed backends, coalescing, missing values, fan-out, and cache
   scope.
+- `batching/docs/single-flight.md`: full-flight request coalescing, cancellation, failure, and cache
+  scope.
 - `batching/docs/performance.md`: measurement evidence, methodology, and performance workflows.
 - `consumers/docs/consumers.md`: routing, lane ordering, batching, offsets, backpressure, rebalance,
   failure, and shutdown.
