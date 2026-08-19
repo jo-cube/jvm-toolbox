@@ -131,10 +131,10 @@ Release tags may look like `v1.2.3` or `v1.2.3-alpha.1`; Maven receives the valu
 ### Releasing
 
 Tag the exact commit on `main`, push the tag, then create and publish its GitHub Release. Pushing the
-tag alone does not publish. The workflow validates that the tagged commit belongs to `main`, signs both
-artifacts, waits for Central validation, and releases the deployment.
+tag alone does not publish. The workflow validates that the tagged commit belongs to `main`, signs all
+three publications, waits for Central validation, and releases the deployment.
 
-`./gradlew publishToMavenLocal` publishes both modules for local consumer testing. A release-shaped
+`./gradlew publishToMavenLocal` publishes all three modules for local consumer testing. A release-shaped
 local build can add `-PreleaseVersion=1.2.3` and Gradle signing credentials.
 
 Before preparing a release:
