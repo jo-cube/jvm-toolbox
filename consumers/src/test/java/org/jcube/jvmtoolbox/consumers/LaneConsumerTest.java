@@ -356,6 +356,53 @@ class LaneConsumerTest {
     }
 
     @Test
+    void closeReleasesActiveBatchStateWithoutWaitingForTheProcessor() throws Exception {
+        var mock = new TestConsumer<Integer, String>();
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var worker = new AtomicReference<Thread>();
+        var setup = setup(mock, config(1, 1, 1, 2, 2, 1), ignored -> 0, records -> {
+            worker.set(Thread.currentThread());
+            started.countDown();
+            while (true) {
+                try {
+                    release.await();
+                    return;
+                } catch (InterruptedException ignored) {
+                }
+            }
+        });
+        mock.initial(List.of(P0), List.of(record(0, 0, 1, "unfinished")));
+        var failure = new AtomicReference<Throwable>();
+        Thread runner = start(setup, failure);
+        try {
+            assertTrue(started.await(2, SECONDS));
+            setup.close();
+            runner.join();
+
+            var lanesField = LaneConsumer.class.getDeclaredField("lanes");
+            lanesField.setAccessible(true);
+            Object lane = ((List<?>) lanesField.get(setup)).getFirst();
+            var activeField = lane.getClass().getDeclaredField("active");
+            activeField.setAccessible(true);
+            assertNull(activeField.get(lane));
+
+            release.countDown();
+            worker.get().join(Duration.ofSeconds(2));
+            assertFalse(worker.get().isAlive());
+
+            var completionsField = LaneConsumer.class.getDeclaredField("completions");
+            completionsField.setAccessible(true);
+            assertTrue(((Collection<?>) completionsField.get(setup)).isEmpty());
+        } finally {
+            release.countDown();
+            setup.close();
+            runner.join();
+        }
+        assertNull(failure.get());
+    }
+
+    @Test
     void dispatchesAPartialBatchWhenItsOldestRecordReachesTheWait() throws Exception {
         var mock = new TestConsumer<Integer, String>();
         var now = new AtomicLong();

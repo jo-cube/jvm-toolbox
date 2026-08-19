@@ -369,8 +369,13 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         } catch (Throwable processorFailure) {
             failure = processorFailure;
         }
-        completions.add(new Completion<>(batch, failure));
-        wakeOwner();
+        var completion = new Completion<>(batch, failure);
+        completions.add(completion);
+        if (lifecycle.get() == Lifecycle.RUNNING) {
+            wakeOwner();
+        } else {
+            completions.clear();
+        }
     }
 
     private Throwable drainCompletions() {
@@ -545,11 +550,13 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
             if (lane.active != null) {
                 lane.active.invalidated = true;
                 lane.active.thread.interrupt();
+                lane.active = null;
             }
         }
         partitions.clear();
         paused.clear();
         completions.clear();
+        activeBatches = 0;
         globalInFlight = 0;
     }
 
