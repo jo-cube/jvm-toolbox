@@ -1,3 +1,3 @@
 rootProject.name = "jvm-toolbox"
 
-include("batching", "consumers")
+include("batching", "bulkhead", "consumers")
