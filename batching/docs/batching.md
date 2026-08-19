@@ -2,7 +2,9 @@
 
 `MicroBatcher<I, O>` turns independent foreground operations into positional backend batches. Use it
 for writes, bulk RPCs, inference calls, or any operation where equal inputs remain independent. For
-lookups where equal keys should share backend work, use [KeyBatchLoader](key-batch-loader.md).
+lookups where equal keys should share backend work, use [KeyBatchLoader](key-batch-loader.md). When
+callers need one incrementally reduced aggregate rather than individual results, use
+[WindowedAccumulator](windowed-accumulator.md).
 
 ```text
 single-item callers -> bounded admission -> batches of List<I>

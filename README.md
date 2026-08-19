@@ -8,7 +8,7 @@ helpers.
 
 | Artifact | Use it for | Runtime dependencies |
 | --- | --- | --- |
-| `jvm-toolbox-batching` | Batching, keyed loading, and request coalescing | JDK only |
+| `jvm-toolbox-batching` | Batching, windowed accumulation, keyed loading, and request coalescing | JDK only |
 | `jvm-toolbox-bulkhead` | Bounded concurrent calls to finite downstream resources | JDK only |
 | `jvm-toolbox-consumers` | Ordered, parallel Apache Kafka record processing | Apache Kafka client |
 
@@ -67,6 +67,16 @@ It has no batching, caching, admission, executor, or lifecycle machinery.
 
 See [batching](batching/docs/batching.md), [key batch loading](batching/docs/key-batch-loader.md), and
 [single-flight request coalescing](batching/docs/single-flight.md).
+
+## Windowed accumulation
+
+`WindowedAccumulator<I, A>` incrementally combines contributions into one mutable state and processes
+that state when its count or age reaches a configured bound. It has bounded admission and ordered
+processing, but no per-input retention, result, or cancellation handle.
+
+Use it for counters, statistics, buffers, and periodically flushed summaries. See
+[windowed accumulation](batching/docs/windowed-accumulator.md) for window boundaries, state ownership,
+backpressure, failure, and lifecycle contracts.
 
 ## Ordered consumers
 

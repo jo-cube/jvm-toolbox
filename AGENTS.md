@@ -45,6 +45,8 @@ Read the smallest maintained guide that covers the task:
 - `README.md`: product positioning, installation, and artifact choice.
 - `batching/docs/batching.md`: `MicroBatcher`, non-keyed backends, admission, failure, lifecycle, and
   observability.
+- `batching/docs/windowed-accumulator.md`: incremental accumulation, window boundaries, state
+  ownership, backpressure, failure, and lifecycle.
 - `batching/docs/key-batch-loader.md`: keyed backends, coalescing, missing values, fan-out, and cache
   scope.
 - `batching/docs/single-flight.md`: full-flight request coalescing, cancellation, failure, and cache
@@ -79,6 +81,8 @@ required for ordinary tests.
   blocking, exceptions, thread safety, cancellation, and lifecycle behavior.
 - For batching, treat admission, oldest-request timing, result correlation, batch failure,
   cancellation, `maxConcurrentBatches`, and close/drain races as contracts.
+- For windowed accumulation, treat count/time/flush boundaries, state transfer, pending-input
+  capacity, processor failure, and close/drain races as contracts.
 - For consumers, treat deterministic routing, lane order, sparse offset frontiers, bounded polling,
   pause/resume, rebalance fencing, mixed-batch invalidation, commits, and no-drain shutdown as
   contracts.
