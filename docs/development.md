@@ -34,7 +34,7 @@ of either Maven publication.
 
 ```text
 just test                 run all unit and concurrency contract tests
-just check                compile source sets, run tests, and enforce warning-free Javadocs
+just check                compile without warnings, run tests, and enforce warning-free Javadocs
 just docs                 generate both artifacts' API Javadocs
 just publication-check    build artifacts, POMs, and Gradle metadata
 ```

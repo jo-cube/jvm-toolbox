@@ -12,4 +12,8 @@ subprojects {
     repositories {
         mavenCentral()
     }
+
+    tasks.withType<JavaCompile>().configureEach {
+        options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+    }
 }

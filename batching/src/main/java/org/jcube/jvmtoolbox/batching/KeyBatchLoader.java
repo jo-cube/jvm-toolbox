@@ -102,11 +102,11 @@ public final class KeyBatchLoader<K, V> implements AutoCloseable {
 
         var outcomes = new ArrayList<BatchOutcome<Optional<V>>>(keys.size());
         for (K key : keys) {
-            if (!loaded.containsKey(key)) {
+            BatchOutcome<V> outcome = loaded.get(key);
+            if (outcome == null) {
                 outcomes.add(BatchOutcome.success(Optional.empty()));
                 continue;
             }
-            BatchOutcome<V> outcome = loaded.get(key);
             if (outcome instanceof BatchOutcome.Success<?> success) {
                 outcomes.add(BatchOutcome.success(Optional.of((V) success.value())));
             } else if (outcome instanceof BatchOutcome.Failure<?> failure) {

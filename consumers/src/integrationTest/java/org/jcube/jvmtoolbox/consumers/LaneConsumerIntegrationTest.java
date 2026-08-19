@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.regex.Pattern;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -306,7 +307,7 @@ class LaneConsumerIntegrationTest {
                 properties,
                 new IntegerDeserializer(),
                 new StringDeserializer(),
-                List.of(topic),
+                Pattern.compile(Pattern.quote(topic)),
                 config,
                 LaneRouter.byKeyHashCode(),
                 processor);

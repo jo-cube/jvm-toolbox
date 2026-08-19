@@ -41,7 +41,7 @@ public final class BatchingProfilerHarness {
         BatchingProfiler keyed = BatchingProfiler.keyed(
                 LIFECYCLE,
                 List.of(keyedExperiment()),
-                sequence -> (int) Math.floorMod(sequence, 16),
+                sequence -> Math.floorMod(sequence, 16),
                 ignored -> BatchingProfilerHarness::loadKeys);
         List<BatchingProfiler.Result> keyedRepetitions = keyed.profile();
         repetitions.addAll(keyedRepetitions);

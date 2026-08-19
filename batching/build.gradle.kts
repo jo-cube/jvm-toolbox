@@ -28,6 +28,11 @@ val perfSourceSet = sourceSets.create("perf") {
     runtimeClasspath += sourceSets.main.get().output
 }
 
+tasks.named<JavaCompile>(perfSourceSet.compileJavaTaskName) {
+    // Harness-only carrier layout and broad close/failure types are intentional.
+    options.compilerArgs.add("-Xlint:-auxiliaryclass,-try,-serial")
+}
+
 dependencies {
     add(perfSourceSet.implementationConfigurationName, "org.hdrhistogram:HdrHistogram:2.2.2")
     add(perfSourceSet.implementationConfigurationName, "org.postgresql:postgresql:42.7.13")
