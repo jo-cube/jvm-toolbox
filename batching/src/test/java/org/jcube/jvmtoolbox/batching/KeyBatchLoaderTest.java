@@ -183,6 +183,16 @@ class KeyBatchLoaderTest {
     }
 
     @Test
+    void nullBackendOutcomesAreFailuresRatherThanMissing() throws Exception {
+        try (var loader = new KeyBatchLoader<String, String>(config(1), keys ->
+                Collections.singletonMap("key", null))) {
+            var failure = assertThrows(ExecutionException.class, () -> loader.load("key").get(2, SECONDS));
+
+            assertEquals(IllegalStateException.class, failure.getCause().getClass());
+        }
+    }
+
+    @Test
     void nullBackendKeysFailTheWholeBatch() throws Exception {
         try (var loader = new KeyBatchLoader<String, String>(config(1), keys ->
                 Collections.singletonMap(null, BatchOutcome.success("value")))) {
