@@ -361,9 +361,15 @@ final class ResourceProbe {
         running = false;
         if (sampler != null) {
             LockSupport.unpark(sampler);
-            try {
-                sampler.join();
-            } catch (InterruptedException interrupted) {
+            boolean interrupted = false;
+            while (sampler.isAlive()) {
+                try {
+                    sampler.join();
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) {
                 Thread.currentThread().interrupt();
             }
         }
