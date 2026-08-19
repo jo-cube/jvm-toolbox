@@ -28,7 +28,7 @@ jobs:
       - name: Verify correctness, Javadocs, and source sets
         run: ./gradlew check --warning-mode=fail
       - name: Verify publication metadata and artifacts
-        run: ./gradlew assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication --warning-mode=fail
+        run: ./gradlew assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :bulkhead:generatePomFileForMavenJavaPublication :bulkhead:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication --warning-mode=fail
 
   kafka-integration:
     runs-on: ubuntu-latest
