@@ -4,7 +4,7 @@ plugins {
     id("me.champeau.jmh")
 }
 
-description = "Bounded micro-batching and keyed batch loading"
+description = "Batching, keyed loading, and request coalescing"
 
 base {
     archivesName = "jvm-toolbox-batching"
