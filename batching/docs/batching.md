@@ -2,7 +2,9 @@
 
 `MicroBatcher<I, O>` turns independent foreground operations into positional backend batches. Use it
 for writes, bulk RPCs, inference calls, or any operation where equal inputs remain independent. For
-lookups where equal keys should share backend work, use [KeyBatchLoader](key-batch-loader.md).
+lookups where equal keys should share backend work, use [KeyBatchLoader](key-batch-loader.md). When
+callers need one incrementally reduced aggregate rather than individual results, use
+[WindowedAccumulator](windowed-accumulator.md).
 
 ```text
 single-item callers -> bounded admission -> batches of List<I>
@@ -229,7 +231,8 @@ The processor must return one non-null `BatchOutcome<O>` per input in the same o
 | Null list, null outcome, or wrong outcome count | The whole batch fails with `IllegalStateException`. |
 
 Equal inputs are independent positions and are never deduplicated. If duplicate-key coalescing and
-missing values are required, use `KeyBatchLoader`.
+missing values are required within a formed batch, use `KeyBatchLoader`. If equal keys should share an
+operation for its full lifetime without batching, use [`SingleFlight`](single-flight.md).
 
 ## Cancellation
 

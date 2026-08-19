@@ -11,16 +11,16 @@ docs:
     ./gradlew javadoc
 
 publication-check:
-    ./gradlew assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication --warning-mode=fail
+    ./gradlew assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :bulkhead:generatePomFileForMavenJavaPublication :bulkhead:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication --warning-mode=fail
 
 bench-quick:
-    ./gradlew :batching:jmh -PbenchmarkProfile=quick
+    ./gradlew :batching:jmh :bulkhead:jmh -PbenchmarkProfile=quick
 
 bench:
-    ./gradlew :batching:jmh -PbenchmarkProfile=full
+    ./gradlew :batching:jmh :bulkhead:jmh -PbenchmarkProfile=full
 
 bench-allocation:
-    ./gradlew :batching:jmh -PbenchmarkProfile=allocation
+    ./gradlew :batching:jmh :bulkhead:jmh -PbenchmarkProfile=allocation
 
 bench-jfr:
     ./gradlew :batching:jmh -PbenchmarkProfile=jfr

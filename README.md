@@ -8,7 +8,8 @@ helpers.
 
 | Artifact | Use it for | Runtime dependencies |
 | --- | --- | --- |
-| `jvm-toolbox-batching` | Bounded micro-batching and keyed batch loading | JDK only |
+| `jvm-toolbox-batching` | Batching, windowed accumulation, keyed loading, and request coalescing | JDK only |
+| `jvm-toolbox-bulkhead` | Bounded concurrent calls to finite downstream resources | JDK only |
 | `jvm-toolbox-consumers` | Ordered, parallel Apache Kafka record processing | Apache Kafka client |
 
 Gradle:
@@ -16,6 +17,7 @@ Gradle:
 ```kotlin
 dependencies {
     implementation("io.github.jo-cube:jvm-toolbox-batching:VERSION")
+    implementation("io.github.jo-cube:jvm-toolbox-bulkhead:VERSION")
     implementation("io.github.jo-cube:jvm-toolbox-consumers:VERSION")
 }
 ```
@@ -31,6 +33,11 @@ Maven:
   </dependency>
   <dependency>
     <groupId>io.github.jo-cube</groupId>
+    <artifactId>jvm-toolbox-bulkhead</artifactId>
+    <version>VERSION</version>
+  </dependency>
+  <dependency>
+    <groupId>io.github.jo-cube</groupId>
     <artifactId>jvm-toolbox-consumers</artifactId>
     <version>VERSION</version>
   </dependency>
@@ -39,13 +46,37 @@ Maven:
 
 Add only the artifact you use. Published GitHub Releases are published to Maven Central.
 
-## Batching
+## Bounded downstream calls
+
+`Bulkhead` bounds concurrent calls to one logical downstream operation and optionally admits a
+bounded number of waiting callers. It invokes blocking work or starts asynchronous work on the
+admitting caller, owns no executor or lifecycle, and releases capacity across success, failure, and
+asynchronous completion.
+
+See [bulkhead](bulkhead/docs/bulkhead.md) for admission, interruption, cancellation, and execution
+contracts.
+
+## Batching and request coalescing
 
 `MicroBatcher<I, O>` batches independent positional operations. `KeyBatchLoader<K, V>` additionally
 coalesces equal lookup keys within a batching window. Both provide bounded admission and backend
 concurrency with explicit failure, cancellation, shutdown, and observation contracts.
 
-See [batching](batching/docs/batching.md) and [key batch loading](batching/docs/key-batch-loader.md).
+`SingleFlight<K, V>` instead coalesces equal keys for the full lifetime of an asynchronous operation.
+It has no batching, caching, admission, executor, or lifecycle machinery.
+
+See [batching](batching/docs/batching.md), [key batch loading](batching/docs/key-batch-loader.md), and
+[single-flight request coalescing](batching/docs/single-flight.md).
+
+## Windowed accumulation
+
+`WindowedAccumulator<I, A>` incrementally combines contributions into one mutable state and processes
+that state when its count or age reaches a configured bound. It has bounded admission and ordered
+processing, but no per-input retention, result, or cancellation handle.
+
+Use it for counters, statistics, buffers, and periodically flushed summaries. See
+[windowed accumulation](batching/docs/windowed-accumulator.md) for window boundaries, state ownership,
+backpressure, failure, and lifecycle contracts.
 
 ## Ordered consumers
 
@@ -69,14 +100,14 @@ Use JDK 25 and the checked-in Gradle wrapper:
 ```text
 just test                 # behavior tests
 just check                # tests, Javadocs, and source-set compilation
-just bench-quick          # batching JMH smoke run
+just bench-quick          # batching and bulkhead JMH smoke run
 just perf-quick           # batching system smoke run
 just publication-check    # publication artifacts and metadata
 ```
 
-The repository is a Gradle multi-project build. Published code lives in `batching` and `consumers`;
-the root project is an unpublished build aggregator. See [development](docs/development.md) and
-[performance](batching/docs/performance.md).
+The repository is a Gradle multi-project build. Published code lives in `batching`, `bulkhead`, and
+`consumers`; the root project is an unpublished build aggregator. See
+[development](docs/development.md) and [performance](batching/docs/performance.md).
 
 Licensed under the [MIT License](LICENSE).
 

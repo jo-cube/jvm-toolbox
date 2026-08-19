@@ -49,7 +49,7 @@ jobs:
       - name: Verify release
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.value }}
-        run: ./gradlew check assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication -PreleaseVersion="$RELEASE_VERSION" --warning-mode=fail
+        run: ./gradlew check assemble :batching:generatePomFileForMavenJavaPublication :batching:generateMetadataFileForMavenJavaPublication :bulkhead:generatePomFileForMavenJavaPublication :bulkhead:generateMetadataFileForMavenJavaPublication :consumers:generatePomFileForMavenJavaPublication :consumers:generateMetadataFileForMavenJavaPublication -PreleaseVersion="$RELEASE_VERSION" --warning-mode=fail
 
   publish:
     needs: verify
