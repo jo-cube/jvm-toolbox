@@ -9,6 +9,7 @@ helpers.
 | Artifact | Use it for | Runtime dependencies |
 | --- | --- | --- |
 | `jvm-toolbox-batching` | Batching, keyed loading, and request coalescing | JDK only |
+| `jvm-toolbox-bulkhead` | Bounded concurrent calls to finite downstream resources | JDK only |
 | `jvm-toolbox-consumers` | Ordered, parallel Apache Kafka record processing | Apache Kafka client |
 
 Gradle:
@@ -16,6 +17,7 @@ Gradle:
 ```kotlin
 dependencies {
     implementation("io.github.jo-cube:jvm-toolbox-batching:VERSION")
+    implementation("io.github.jo-cube:jvm-toolbox-bulkhead:VERSION")
     implementation("io.github.jo-cube:jvm-toolbox-consumers:VERSION")
 }
 ```
@@ -31,6 +33,11 @@ Maven:
   </dependency>
   <dependency>
     <groupId>io.github.jo-cube</groupId>
+    <artifactId>jvm-toolbox-bulkhead</artifactId>
+    <version>VERSION</version>
+  </dependency>
+  <dependency>
+    <groupId>io.github.jo-cube</groupId>
     <artifactId>jvm-toolbox-consumers</artifactId>
     <version>VERSION</version>
   </dependency>
@@ -38,6 +45,16 @@ Maven:
 ```
 
 Add only the artifact you use. Published GitHub Releases are published to Maven Central.
+
+## Bounded downstream calls
+
+`Bulkhead` bounds concurrent calls to one logical downstream operation and optionally admits a
+bounded number of waiting callers. It invokes blocking work or starts asynchronous work on the
+admitting caller, owns no executor or lifecycle, and releases capacity across success, failure, and
+asynchronous completion.
+
+See [bulkhead](bulkhead/docs/bulkhead.md) for admission, interruption, cancellation, and execution
+contracts.
 
 ## Batching and request coalescing
 
@@ -73,14 +90,14 @@ Use JDK 25 and the checked-in Gradle wrapper:
 ```text
 just test                 # behavior tests
 just check                # tests, Javadocs, and source-set compilation
-just bench-quick          # batching JMH smoke run
+just bench-quick          # batching and bulkhead JMH smoke run
 just perf-quick           # batching system smoke run
 just publication-check    # publication artifacts and metadata
 ```
 
-The repository is a Gradle multi-project build. Published code lives in `batching` and `consumers`;
-the root project is an unpublished build aggregator. See [development](docs/development.md) and
-[performance](batching/docs/performance.md).
+The repository is a Gradle multi-project build. Published code lives in `batching`, `bulkhead`, and
+`consumers`; the root project is an unpublished build aggregator. See
+[development](docs/development.md) and [performance](batching/docs/performance.md).
 
 Licensed under the [MIT License](LICENSE).
 
