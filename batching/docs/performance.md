@@ -11,7 +11,7 @@ and are not committed as product claims.
 The repository separates three questions:
 
 1. JMH benchmarks isolate submission, completion, batching, contention, admission, allocation, keyed
-   loading, `Optional`, and statistics costs with synthetic processors.
+   loading, single-flight coalescing, `Optional`, and statistics costs with synthetic processors.
 2. Synthetic system workloads exercise closed-loop and independently paced open-loop traffic,
    backpressure, backend slowdown, high foreground concurrency, latency distributions, CPU, GC, and
    memory.
