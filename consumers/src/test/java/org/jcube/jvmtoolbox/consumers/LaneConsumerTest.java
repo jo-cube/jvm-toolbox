@@ -169,6 +169,70 @@ class LaneConsumerTest {
     }
 
     @Test
+    void partitionRoutingProcessesKeylessRecordsInOrderAndCommitsAcrossPartitions() throws Exception {
+        var mock = new TestConsumer<Integer, String>();
+        var started = new CountDownLatch(2);
+        var release = new CountDownLatch(1);
+        var active = new AtomicIntegerArray(2);
+        var values = List.of(new CopyOnWriteArrayList<String>(), new CopyOnWriteArrayList<String>());
+        var setup = setup(mock, config(2, 1, 2, 8, 8, 4), LaneRouter.byPartition(), records -> {
+            var record = records.getFirst();
+            int partition = record.partition();
+            assertEquals(1, active.incrementAndGet(partition));
+            try {
+                started.countDown();
+                release.await();
+                values.get(partition).add(record.value());
+            } finally {
+                active.decrementAndGet(partition);
+            }
+        });
+        mock.initial(List.of(P0, P1), List.of(
+                record(0, 100, null, "a"), record(0, 105, 7, "b"),
+                record(1, 10, null, "c"), record(1, 20, null, "d")));
+        var failure = new AtomicReference<Throwable>();
+        Thread runner = start(setup, failure);
+        try {
+            assertTrue(started.await(2, SECONDS));
+            release.countDown();
+            mock.awaitCommit(P0, 106);
+            mock.awaitCommit(P1, 21);
+            assertEquals(List.of("a", "b"), values.get(0));
+            assertEquals(List.of("c", "d"), values.get(1));
+        } finally {
+            release.countDown();
+            setup.close();
+            runner.join();
+        }
+        assertNull(failure.get());
+    }
+
+    @Test
+    void keyRoutersRejectNullWhileCustomRecordRoutingCanAcceptIt() throws Exception {
+        var keyless = record(0, 0, null, "keyless");
+        assertThrows(NullPointerException.class,
+                () -> LaneRouter.<Integer, String>byKeyHashCode().route(keyless));
+        assertThrows(NullPointerException.class,
+                () -> LaneRouter.<Integer, String>byKey(ignored -> 0).route(keyless));
+        assertThrows(NullPointerException.class,
+                () -> LaneRouter.<String>byByteArrayKey().route(
+                        new ConsumerRecord<byte[], String>(TOPIC, 0, 0, null, "keyless")));
+        var mock = new TestConsumer<Integer, String>();
+        var setup = setup(mock, config(1, 1, 1, 1, 1, 1),
+                record -> record.value().hashCode(), records -> assertEquals(List.of(keyless), records));
+        mock.initial(List.of(P0), List.of(keyless));
+        var failure = new AtomicReference<Throwable>();
+        Thread runner = start(setup, failure);
+        try {
+            mock.awaitCommit(P0, 1);
+        } finally {
+            setup.close();
+            runner.join();
+        }
+        assertNull(failure.get());
+    }
+
+    @Test
     void commitsOnlyToTheFirstIncompleteSparseOffset() throws Exception {
         var mock = new TestConsumer<Integer, String>();
         var laterCompleted = new CountDownLatch(4);
@@ -533,7 +597,7 @@ class LaneConsumerTest {
     }
 
     private static ConsumerRecord<Integer, String> record(
-            int partition, long offset, int key, String value) {
+            int partition, long offset, Integer key, String value) {
         return new ConsumerRecord<>(
                 TOPIC,
                 partition,
@@ -642,6 +706,12 @@ class LaneConsumerTest {
 
         private OffsetAndMetadata awaitCommitMetadata(
                 TopicPartition partition, long expected) throws Exception {
+            for (Map<TopicPartition, OffsetAndMetadata> commit : commits) {
+                OffsetAndMetadata offset = commit.get(partition);
+                if (offset != null && offset.offset() == expected) {
+                    return offset;
+                }
+            }
             long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
             while (true) {
                 long remaining = deadline - System.nanoTime();

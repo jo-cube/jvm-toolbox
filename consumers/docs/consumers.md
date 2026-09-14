@@ -71,12 +71,19 @@ must be positive. Both durations must be representable in nanoseconds.
 
 ## Routing and lane ordering
 
-Null keys are rejected. Choose routing according to the deserialized key type:
+Choose the scope of ordering:
 
+- `LaneRouter.byPartition()` for partition order, including topics whose records have null keys.
+  It hashes topic and partition together; all records from the same partition share one lane,
+  regardless of their keys.
 - `LaneRouter.byKeyHashCode()` for value types such as `String`, records, and well-behaved domain keys.
 - `LaneRouter.byByteArrayKey()` for content-based hashing of `byte[]` keys.
 - `LaneRouter.byKey(key -> ...)` for an application-defined ordering identity.
-- A `LaneRouter` lambda when routing needs the complete `ConsumerRecord`.
+- A `LaneRouter` lambda when routing needs the complete `ConsumerRecord`, such as a header or value.
+
+The key-based factories reject null keys with `NullPointerException`. Partition routing and custom
+routers can process keyless records. Different topic partitions may share a lane after normalization;
+partition routing preserves partition order but does not guarantee a dedicated lane per partition.
 
 The router returns any integer; the library normalizes it to the configured lane count. Equal ordering
 identities must return the same value for the lifetime of a setup. Changing the lane count changes the

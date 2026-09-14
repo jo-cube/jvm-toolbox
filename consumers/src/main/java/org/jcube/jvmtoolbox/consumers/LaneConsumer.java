@@ -33,7 +33,8 @@ import org.apache.kafka.common.serialization.Deserializer;
  * Consumes Kafka records into deterministic ordered lanes and processes micro-batches in parallel.
  *
  * <p>{@link #run()} is a blocking call and exclusively owns consumer subscription, polling,
- * assignment, flow control, and commits. A record's non-null key is routed to one logical lane.
+ * assignment, flow control, and commits. Each record is routed to one logical lane by the supplied
+ * router, which defines whether null keys are supported.
  * Processor invocations within a lane never overlap; different lanes may execute concurrently on
  * virtual threads.
  *
@@ -342,9 +343,6 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         for (ConsumerRecord<K, V> record : records) {
             if (++accepted > config.maxPollRecords()) {
                 throw new IllegalStateException("Kafka poll exceeded configured maxPollRecords");
-            }
-            if (record.key() == null) {
-                throw new IllegalStateException("null Kafka keys are not supported");
             }
             var topicPartition = new TopicPartition(record.topic(), record.partition());
             PartitionState partition = partitions.get(topicPartition);
