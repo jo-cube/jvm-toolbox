@@ -26,7 +26,8 @@ import java.util.function.LongSupplier;
  * The batcher owns completion of returned futures; callers may observe, compose, wait for, or cancel
  * them, but must not complete them directly or forcibly replace their outcome.
  *
- * <p>{@link #close()} stops admission, immediately makes a partial batch eligible, and waits for all
+ * <p>{@link #flush()} waits for earlier submissions without closing admission.
+ * {@link #close()} stops admission, immediately makes a partial batch eligible, and waits for all
  * admitted work and backend invocations to retire. New submissions are rejected once closing starts.
  * The batcher does not own or close its processor or resources captured by it.
  *
@@ -150,6 +151,40 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     }
 
     /**
+     * Makes earlier submissions immediately eligible and waits uninterruptibly for their processing
+     * and completion delivery, without closing admission.
+     *
+     * <p>The boundary is established under the admission lock. Later submissions remain admissible
+     * but are dispatched only after earlier work finishes; they never delay this flush. Cancelled
+     * submissions are skipped before dispatch, while already-dispatched work is still awaited.
+     * Failures remain on individual futures and are not thrown by this method. No empty batch is sent
+     * to the processor, and flushing requires no pending capacity.
+     *
+     * <p>Concurrent flushes are supported. If closing has already started, waits for shutdown.
+     * Interrupted status is preserved. A processor or synchronous completion action that never
+     * returns can prevent completion. Do not invoke this method from this batcher's processor,
+     * observer callbacks, or synchronous dependent actions on returned futures.
+     */
+    public void flush() {
+        Submission<I, O> boundary = null;
+        lock.lock();
+        try {
+            if (state == State.ACCEPTING) {
+                boundary = new Submission<>(null, 0, new CompletableFuture<>());
+                ingress.addLast(boundary);
+                workAvailable.signal();
+            }
+        } finally {
+            lock.unlock();
+        }
+        if (boundary == null) {
+            joinCoordinator();
+        } else {
+            boundary.future.join();
+        }
+    }
+
+    /**
      * Stops admission and waits uninterruptibly for admitted work to drain.
      *
      * <p>This method is idempotent. If the calling thread is interrupted while waiting, draining still
@@ -206,6 +241,13 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                         executionSlots.release(config.maxConcurrentBatches());
                         return;
                     }
+                    continue;
+                }
+                if (first.input == null) {
+                    // A flush marker separates admission groups. No later batch can hold a slot yet.
+                    executionSlots.acquireUninterruptibly(config.maxConcurrentBatches());
+                    executionSlots.release(config.maxConcurrentBatches());
+                    first.future.complete(null);
                     continue;
                 }
                 if (first.future.isCancelled()) {
@@ -295,7 +337,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                     return null;
                 }
             }
-            return ingress.removeFirst();
+            return ingress.getFirst().input == null ? null : ingress.removeFirst();
         } finally {
             lock.unlock();
         }
@@ -484,6 +526,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     }
 
     private static final class Submission<I, O> {
+        // Null inputs are reserved for flush markers; they never enter admission accounting.
         private final I input;
         private final long admittedAt;
         private final CompletableFuture<O> future;

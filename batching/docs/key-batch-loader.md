@@ -30,6 +30,26 @@ completed values.
 for the same key consume one hundred pending slots even if the backend sees that key once. This makes
 capacity independent of duplicate rate and bounds caller state awaiting a backend outcome.
 
+## Coalescing across running batches
+
+Compose with `SingleFlight` when equal keys should share work until the lookup completes, while
+independent keys still form backend batches:
+
+```java
+var inFlightUsers = new SingleFlight<UserKey, Optional<User>>(users::load);
+CompletableFuture<Optional<User>> result = inFlightUsers.execute(key);
+```
+
+Route all foreground lookups through `inFlightUsers`. Only the first caller for each in-flight key
+enters the loader; duplicates join its outcome even after dispatch. Consequently, loader capacity and
+statistics count submitted flights, not all foreground callers. Admission still runs on the starting
+caller, but `SingleFlight` delivers admission failures through its future. Use rejecting admission on
+event-loop threads.
+
+Cancelling a foreground handle does not cancel the shared loader request, even when all current
+callers cancel. Completed values and failures are never cached. Close the underlying loader when its
+application lifecycle ends; `SingleFlight` owns no resources.
+
 ## PostgreSQL backend example
 
 The following processor uses PostgreSQL `UNNEST` for a composite `(text, integer)` key. It copies the
@@ -170,7 +190,7 @@ therefore structurally distinct from null and failure.
 The loader does not own or close its processor, datasource, or other captured resources. Processor
 code must not call back into the loader that invoked it.
 
-## Cancellation, capacity, and shutdown
+## Cancellation, capacity, flush, and shutdown
 
 Every caller receives an independent future. Cancelling one duplicate caller does not cancel another
 caller or remove a backend key required by another live caller. If every caller for a key is cancelled
@@ -179,6 +199,9 @@ before dispatch, its work can be skipped; cancellation after dispatch never inte
 Cancellation notifies the batching coordinator. Cancelled callers release capacity only when the
 coordinator observes them or when their already-dispatched batch retires, so cancellation is not an
 immediate capacity reservation mechanism.
+
+`flush()` dispatches and waits for earlier loads without closing the loader. Later loads do not delay
+it, and lookup failures remain on their futures. See [flush and shutdown](batching.md#flush-and-shutdown).
 
 Admission policies, timing, observer behavior, and graceful shutdown are identical to `MicroBatcher`.
 During shutdown, stop new frontend requests, close the loader so admitted work drains, and close its

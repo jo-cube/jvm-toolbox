@@ -78,6 +78,21 @@ public final class KeyBatchLoader<K, V> implements AutoCloseable {
     }
 
     /**
+     * Makes earlier loads immediately eligible and waits uninterruptibly for their processing and
+     * completion delivery without closing admission.
+     *
+     * <p>Later loads are dispatched after the boundary completes and do not delay it. Failures remain
+     * on individual futures. Interrupted status is preserved; if closing has already started, waits for
+     * shutdown. Do not invoke this method from this loader's processor, observer callbacks, or
+     * synchronous dependent actions on returned futures.
+     *
+     * @see MicroBatcher#flush()
+     */
+    public void flush() {
+        batcher.flush();
+    }
+
+    /**
      * Stops admission and waits uninterruptibly for admitted loads to drain.
      *
      * <p>This method is idempotent and restores the calling thread's interrupted status after draining.

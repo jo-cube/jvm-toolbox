@@ -180,7 +180,7 @@ completion but never interrupts a shared or already-dispatched backend invocatio
 
 Durations are converted to nanoseconds and must be non-negative and representable at that precision.
 The maximum wait is measured from the oldest admitted request in the currently forming batch. A batch
-becomes eligible when full, when that wait expires, or when closing begins.
+becomes eligible when full, when that wait expires, at a flush boundary, or when closing begins.
 
 `maxWait` is an eligibility threshold, not a dispatch deadline. Runtime scheduling and a saturated
 backend-concurrency limit may delay actual dispatch.
@@ -251,7 +251,28 @@ The `mayInterruptIfRunning` argument to `CompletableFuture.cancel` does not inte
 waiting on a returned future is interrupted after admission, processing continues unless the
 application separately cancels that future.
 
-## Shutdown
+## Flush and shutdown
+
+`flush()` makes submissions admitted before its boundary immediately eligible and waits for their
+processing and completion delivery without closing admission. Use it at the end of an import chunk or
+before a read that depends on earlier writes. Failures remain on the submission futures, so inspect
+those results to determine success:
+
+```java
+var result = auditWrites.submit(event);
+auditWrites.flush();
+result.join();
+```
+
+The boundary is established under the admission lock. Later submissions can be admitted, but their
+batches wait until earlier work finishes and do not delay the flush. Concurrent flushes are supported.
+Flushing an empty batcher never invokes the processor; a flush requires no pending capacity and does
+not count as a submission in observer statistics. Cancellation skips undispatched work as usual, but
+flushing still waits for already-dispatched work even if its callers cancel.
+
+Flush waits uninterruptibly, preserving interrupted status, and has no backend timeout. It also waits
+for synchronous completion actions on earlier futures. Do not call it from processor, observer, or
+synchronous future callbacks. If closing has already started, it waits for shutdown.
 
 `close()` is graceful, blocking, and idempotent. It stops admission, makes a partial batch immediately
 eligible, waits for admitted work and backend invocations to retire, and then returns. New submissions
