@@ -129,3 +129,33 @@ just postgres-down
 Larger datasets and longer profiles are manual workflows. Performance changes require before/after
 measurements using comparable environments; no machine-specific throughput threshold belongs in the
 normal correctness workflow.
+
+## Focused batching comparisons
+
+`MicroBatcherBenchmark` measures complete submission-to-result cycles. Its `sequentialOutcomes`
+parameter selects either the usual array-backed result list or a `LinkedList`, both valid processor
+results. Keep the whole-batch validation pass: a malformed result must fail every position before any
+success is delivered. Completion traverses the validated outcomes with an iterator so sequential
+lists do not turn result correlation into quadratic work.
+
+Measure both statistics settings and include one-request batches and the usual array-backed results
+when assessing traversal changes. Preserve the existing admission coordination unless representative
+system measurements support a change: fewer lock acquisitions alone do not establish a benefit.
+
+For a focused comparison, build the JMH jar on each revision and run identical settings, retaining
+separate result files under `batching/build/reports/jmh`:
+
+```sh
+./gradlew :batching:jmhJar
+mkdir -p batching/build/reports/jmh
+java -jar batching/build/libs/jvm-toolbox-batching-0.0.0-SNAPSHOT-jmh.jar \
+  '.*MicroBatcherBenchmark.batch' \
+  -p batchSize=1,128,512,4096 -p statisticsEnabled=false,true \
+  -p sequentialOutcomes=false,true -bm avgt -tu us \
+  -wi 3 -i 5 -w 1s -r 1s -f 2 -rf json \
+  -rff batching/build/reports/jmh/comparison.json
+```
+
+Large sequential-result batches diagnose an input-size scaling problem; they are not a reason to
+increase the application's batch size. Pair these mechanical measurements with `just perf-quick` or
+a representative backend workload before attributing an end-to-end throughput gain to coordination.

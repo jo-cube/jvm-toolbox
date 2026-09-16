@@ -243,6 +243,8 @@ Every submission has an independent future:
 - Cancelling one request does not affect sibling positions.
 - Cancellation notifies the coordinator, but capacity is released only when cancelled work is
   observed or its dispatched batch retires, not necessarily when `cancel` returns.
+- Repeated or concurrent cancellation attempts on the same future produce only one cancellation
+  event. As with `CompletableFuture`, `cancel` still returns true for an already-cancelled future.
 
 The batcher owns completion of the returned future. Callers may observe, compose, wait for, or cancel
 it, but must not invoke `complete`, `completeExceptionally`, `obtrudeValue`, or `obtrudeException`.
