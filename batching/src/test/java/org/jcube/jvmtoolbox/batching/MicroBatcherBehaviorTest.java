@@ -7,10 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Duration;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MicroBatcherBehaviorTest {
     @Test
@@ -98,14 +101,44 @@ class MicroBatcherBehaviorTest {
 
     @Test
     void nullOutcomeFailsTheWholeBatch() throws Exception {
-        try (var batcher = new MicroBatcher<String, String>(
-                config(1), inputs -> Collections.singletonList(null))) {
-            var failure = assertThrows(
-                            ExecutionException.class,
-                            () -> batcher.submit("input").get(2, SECONDS))
-                    .getCause();
+        try (var batcher = new MicroBatcher<String, String>(config(2), inputs ->
+                new LinkedList<>(Arrays.asList(BatchOutcome.success("must not escape"), null)))) {
+            var first = batcher.submit("first");
+            var second = batcher.submit("second");
+            var failure = assertThrows(ExecutionException.class, () -> first.get(2, SECONDS)).getCause();
 
             assertEquals(IllegalStateException.class, failure.getClass());
+            assertSame(failure, assertThrows(ExecutionException.class, () -> second.get(2, SECONDS)).getCause());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void sequentialOutcomesPreservePositionsAndFailures(boolean observed) throws Exception {
+        var failure = new IllegalArgumentException("bad item");
+        BatchProcessor<String, String> processor = inputs -> new LinkedList<>(List.of(
+                BatchOutcome.success(inputs.getFirst()),
+                BatchOutcome.failure(failure),
+                BatchOutcome.success(null),
+                BatchOutcome.success(inputs.getLast())));
+        var statistics = new BatchStatistics();
+        try (var batcher = observed
+                ? new MicroBatcher<>(config(4), processor, statistics)
+                : new MicroBatcher<>(config(4), processor)) {
+            var first = batcher.submit("first");
+            var second = batcher.submit("second");
+            var third = batcher.submit("third");
+            var fourth = batcher.submit("fourth");
+            batcher.flush();
+
+            assertEquals("first", first.get(2, SECONDS));
+            assertSame(failure, assertThrows(ExecutionException.class, second::get).getCause());
+            assertNull(third.get(2, SECONDS));
+            assertEquals("fourth", fourth.get(2, SECONDS));
+            if (observed) {
+                assertEquals(3, statistics.snapshot().successfulRequests());
+                assertEquals(1, statistics.snapshot().failedRequests());
+            }
         }
     }
 

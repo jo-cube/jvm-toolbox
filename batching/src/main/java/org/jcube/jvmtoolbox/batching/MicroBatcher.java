@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
@@ -442,9 +443,10 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     @SuppressWarnings("unchecked")
     private static <I, O> void complete(
             List<Submission<I, O>> batch, List<BatchOutcome<O>> outcomes) {
-        for (int index = 0; index < batch.size(); index++) {
-            var future = batch.get(index).future;
-            var outcome = outcomes.get(index);
+        var results = outcomes.iterator();
+        for (var submission : batch) {
+            var future = submission.future;
+            var outcome = results.next();
             if (outcome instanceof BatchOutcome.Success<?> success) {
                 future.complete((O) success.value());
             } else if (outcome instanceof BatchOutcome.Failure<?> failure) {
@@ -458,9 +460,10 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
             List<Submission<I, O>> batch, List<BatchOutcome<O>> outcomes) {
         int successfulRequests = 0;
         int failedRequests = 0;
-        for (int index = 0; index < batch.size(); index++) {
-            var future = batch.get(index).future;
-            var outcome = outcomes.get(index);
+        var results = outcomes.iterator();
+        for (var submission : batch) {
+            var future = submission.future;
+            var outcome = results.next();
             if (outcome instanceof BatchOutcome.Success<?> success) {
                 if (future.complete((O) success.value())) {
                     successfulRequests++;
@@ -547,11 +550,12 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
 
         @Override
         public boolean cancel(boolean mayInterruptIfRunning) {
-            boolean cancelled = super.cancel(mayInterruptIfRunning);
+            // Only the winning transition emits an event; cancel also returns true on later calls.
+            boolean cancelled = !isDone() && super.completeExceptionally(new CancellationException());
             if (cancelled) {
                 notifier.cancelled();
             }
-            return cancelled;
+            return cancelled || isCancelled();
         }
     }
 
