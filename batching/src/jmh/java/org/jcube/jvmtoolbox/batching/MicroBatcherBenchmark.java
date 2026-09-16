@@ -1,6 +1,7 @@
 package org.jcube.jvmtoolbox.batching;
 
 import java.time.Duration;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +26,9 @@ public class MicroBatcherBenchmark {
     @Param({"false", "true"})
     public boolean statisticsEnabled;
 
+    @Param({"false", "true"})
+    public boolean sequentialOutcomes;
+
     private MicroBatcher<Integer, Integer> batcher;
     private BatchStatistics statistics;
     private CompletableFuture<Integer>[] futures;
@@ -32,7 +36,8 @@ public class MicroBatcherBenchmark {
     @SuppressWarnings("unchecked")
     @Setup(Level.Trial)
     public void setUp() {
-        List<BatchOutcome<Integer>> outcomes = BenchmarkSupport.integerOutcomes(batchSize);
+        List<BatchOutcome<Integer>> values = BenchmarkSupport.integerOutcomes(batchSize);
+        List<BatchOutcome<Integer>> outcomes = sequentialOutcomes ? new LinkedList<>(values) : values;
         var config = BenchmarkSupport.config(
                 batchSize,
                 Duration.ofSeconds(5),
