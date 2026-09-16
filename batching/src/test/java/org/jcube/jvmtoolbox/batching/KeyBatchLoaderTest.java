@@ -202,6 +202,56 @@ class KeyBatchLoaderTest {
         }
     }
 
+    @Test
+    void flushCompletesPartialKeyedBatchesWithMissingAndFailedOutcomes() throws Exception {
+        var failure = new IOException("lookup failed");
+        var config = new BatchingConfig(8, Duration.ofHours(1), 1, 4,
+                AdmissionPolicy.REJECT, Duration.ZERO);
+        try (var loader = new KeyBatchLoader<String, String>(config, keys -> {
+            assertEquals(Set.of("found", "missing", "failed"), keys);
+            return Map.of("found", BatchOutcome.success("value"),
+                    "failed", BatchOutcome.failure(failure));
+        }); var callers = Executors.newVirtualThreadPerTaskExecutor()) {
+            var found = loader.load("found");
+            var duplicate = loader.load("found");
+            var missing = loader.load("missing");
+            var failed = loader.load("failed");
+            callers.submit(loader::flush).get(2, SECONDS);
+            assertEquals(Optional.of("value"), found.join());
+            assertEquals(found.join(), duplicate.join());
+            assertEquals(Optional.empty(), missing.join());
+            assertSame(failure, assertThrows(ExecutionException.class, failed::get).getCause());
+        }
+    }
+
+    @Test
+    void singleFlightSharesRunningBatchedLookupsWithoutCachingCompletedValues() throws Exception {
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        var loader = new KeyBatchLoader<String, String>(config(1), keys -> {
+            calls.incrementAndGet();
+            started.countDown();
+            release.await();
+            return Map.of("key", BatchOutcome.success("value"));
+        });
+        try {
+            var flights = new SingleFlight<String, Optional<String>>(loader::load);
+            var first = flights.execute("key");
+            assertTrue(started.await(2, SECONDS));
+            first.cancel(false);
+            var duplicate = flights.execute("key");
+            release.countDown();
+            assertEquals(Optional.of("value"), duplicate.get(2, SECONDS));
+            assertEquals(1, calls.get());
+            assertEquals(Optional.of("value"), flights.execute("key").get(2, SECONDS));
+            assertEquals(2, calls.get());
+        } finally {
+            release.countDown();
+            loader.close();
+        }
+    }
+
     private static BatchingConfig config(int maxBatchSize) {
         return new BatchingConfig(
                 maxBatchSize,

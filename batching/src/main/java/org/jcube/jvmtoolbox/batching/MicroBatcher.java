@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
@@ -26,7 +27,8 @@ import java.util.function.LongSupplier;
  * The batcher owns completion of returned futures; callers may observe, compose, wait for, or cancel
  * them, but must not complete them directly or forcibly replace their outcome.
  *
- * <p>{@link #close()} stops admission, immediately makes a partial batch eligible, and waits for all
+ * <p>{@link #flush()} waits for earlier submissions without closing admission.
+ * {@link #close()} stops admission, immediately makes a partial batch eligible, and waits for all
  * admitted work and backend invocations to retire. New submissions are rejected once closing starts.
  * The batcher does not own or close its processor or resources captured by it.
  *
@@ -150,6 +152,40 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     }
 
     /**
+     * Makes earlier submissions immediately eligible and waits uninterruptibly for their processing
+     * and completion delivery, without closing admission.
+     *
+     * <p>The boundary is established under the admission lock. Later submissions remain admissible
+     * but are dispatched only after earlier work finishes; they never delay this flush. Cancelled
+     * submissions are skipped before dispatch, while already-dispatched work is still awaited.
+     * Failures remain on individual futures and are not thrown by this method. No empty batch is sent
+     * to the processor, and flushing requires no pending capacity.
+     *
+     * <p>Concurrent flushes are supported. If closing has already started, waits for shutdown.
+     * Interrupted status is preserved. A processor or synchronous completion action that never
+     * returns can prevent completion. Do not invoke this method from this batcher's processor,
+     * observer callbacks, or synchronous dependent actions on returned futures.
+     */
+    public void flush() {
+        Submission<I, O> boundary = null;
+        lock.lock();
+        try {
+            if (state == State.ACCEPTING) {
+                boundary = new Submission<>(null, 0, new CompletableFuture<>());
+                ingress.addLast(boundary);
+                workAvailable.signal();
+            }
+        } finally {
+            lock.unlock();
+        }
+        if (boundary == null) {
+            joinCoordinator();
+        } else {
+            boundary.future.join();
+        }
+    }
+
+    /**
      * Stops admission and waits uninterruptibly for admitted work to drain.
      *
      * <p>This method is idempotent. If the calling thread is interrupted while waiting, draining still
@@ -206,6 +242,13 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                         executionSlots.release(config.maxConcurrentBatches());
                         return;
                     }
+                    continue;
+                }
+                if (first.input == null) {
+                    // A flush marker separates admission groups. No later batch can hold a slot yet.
+                    executionSlots.acquireUninterruptibly(config.maxConcurrentBatches());
+                    executionSlots.release(config.maxConcurrentBatches());
+                    first.future.complete(null);
                     continue;
                 }
                 if (first.future.isCancelled()) {
@@ -295,7 +338,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                     return null;
                 }
             }
-            return ingress.removeFirst();
+            return ingress.getFirst().input == null ? null : ingress.removeFirst();
         } finally {
             lock.unlock();
         }
@@ -400,9 +443,10 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     @SuppressWarnings("unchecked")
     private static <I, O> void complete(
             List<Submission<I, O>> batch, List<BatchOutcome<O>> outcomes) {
-        for (int index = 0; index < batch.size(); index++) {
-            var future = batch.get(index).future;
-            var outcome = outcomes.get(index);
+        var results = outcomes.iterator();
+        for (var submission : batch) {
+            var future = submission.future;
+            var outcome = results.next();
             if (outcome instanceof BatchOutcome.Success<?> success) {
                 future.complete((O) success.value());
             } else if (outcome instanceof BatchOutcome.Failure<?> failure) {
@@ -416,9 +460,10 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
             List<Submission<I, O>> batch, List<BatchOutcome<O>> outcomes) {
         int successfulRequests = 0;
         int failedRequests = 0;
-        for (int index = 0; index < batch.size(); index++) {
-            var future = batch.get(index).future;
-            var outcome = outcomes.get(index);
+        var results = outcomes.iterator();
+        for (var submission : batch) {
+            var future = submission.future;
+            var outcome = results.next();
             if (outcome instanceof BatchOutcome.Success<?> success) {
                 if (future.complete((O) success.value())) {
                     successfulRequests++;
@@ -484,6 +529,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     }
 
     private static final class Submission<I, O> {
+        // Null inputs are reserved for flush markers; they never enter admission accounting.
         private final I input;
         private final long admittedAt;
         private final CompletableFuture<O> future;
@@ -504,11 +550,12 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
 
         @Override
         public boolean cancel(boolean mayInterruptIfRunning) {
-            boolean cancelled = super.cancel(mayInterruptIfRunning);
+            // Only the winning transition emits an event; cancel also returns true on later calls.
+            boolean cancelled = !isDone() && super.completeExceptionally(new CancellationException());
             if (cancelled) {
                 notifier.cancelled();
             }
-            return cancelled;
+            return cancelled || isCancelled();
         }
     }
 

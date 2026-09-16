@@ -30,7 +30,7 @@ public interface BatchObserver {
      */
     default void onRejected(RejectionReason reason) {}
 
-    /** Called after a caller successfully cancels an admitted, incomplete completion handle. */
+    /** Called once when a caller changes an admitted, incomplete completion handle to cancelled. */
     default void onCancelled() {}
 
     /**

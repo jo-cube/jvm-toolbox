@@ -80,7 +80,7 @@ required for ordinary tests.
 - Keep the public API smaller than the implementation. Document nullability, units, ownership,
   blocking, exceptions, thread safety, cancellation, and lifecycle behavior.
 - For batching, treat admission, oldest-request timing, result correlation, batch failure,
-  cancellation, `maxConcurrentBatches`, and close/drain races as contracts.
+  cancellation, `maxConcurrentBatches`, flush boundaries, and close/drain races as contracts.
 - For windowed accumulation, treat count/time/flush boundaries, state transfer, pending-input
   capacity, processor failure, and close/drain races as contracts.
 - For consumers, treat deterministic routing, lane order, sparse offset frontiers, bounded polling,

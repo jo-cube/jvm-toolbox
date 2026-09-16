@@ -261,6 +261,33 @@ class LaneConsumerIntegrationTest {
         assertEquals(Set.of("zero", "one"), Set.copyOf(successfulValues));
     }
 
+    @Test
+    void partitionRoutingConsumesAndCommitsKeylessRecords() throws Exception {
+        String topic = createTopic(2);
+        String group = unique("keyless");
+        produce(List.of(
+                new ProducerRecord<>(topic, 0, null, "a"),
+                new ProducerRecord<>(topic, 0, 17, "b"),
+                new ProducerRecord<>(topic, 1, null, "c"),
+                new ProducerRecord<>(topic, 1, null, "d")));
+        var values = List.of(new CopyOnWriteArrayList<String>(), new CopyOnWriteArrayList<String>());
+        var setup = consumer(topic, group, "partition-order", config(2, 1, 2, 4),
+                LaneRouter.byPartition(), records -> records.forEach(record ->
+                        values.get(record.partition()).add(record.value())));
+        var failure = new AtomicReference<Throwable>();
+        Thread runner = start(setup, failure);
+        try {
+            awaitCommitted(group, Map.of(
+                    new TopicPartition(topic, 0), 2L, new TopicPartition(topic, 1), 2L));
+            assertEquals(List.of("a", "b"), values.get(0));
+            assertEquals(List.of("c", "d"), values.get(1));
+        } finally {
+            setup.close();
+            runner.join();
+        }
+        assertNull(failure.get());
+    }
+
     private String createTopic(int partitions) throws Exception {
         String topic = unique("topic");
         topics.add(topic);
@@ -294,6 +321,16 @@ class LaneConsumerIntegrationTest {
             String client,
             ConsumerProcessingConfig config,
             ConsumerBatchProcessor<Integer, String> processor) {
+        return consumer(topic, group, client, config, LaneRouter.byKeyHashCode(), processor);
+    }
+
+    private static LaneConsumer<Integer, String> consumer(
+            String topic,
+            String group,
+            String client,
+            ConsumerProcessingConfig config,
+            LaneRouter<Integer, String> router,
+            ConsumerBatchProcessor<Integer, String> processor) {
         var properties = new HashMap<String, Object>();
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS);
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, group);
@@ -309,7 +346,7 @@ class LaneConsumerIntegrationTest {
                 new StringDeserializer(),
                 Pattern.compile(Pattern.quote(topic)),
                 config,
-                LaneRouter.byKeyHashCode(),
+                router,
                 processor);
     }
 

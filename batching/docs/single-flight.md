@@ -88,4 +88,6 @@ their completion action.
 The primitive deliberately has no cache, expiry, retries, admission limit, queue, batch window,
 executor, observer, or tuning options. Put those policies at the layer that owns them. Use
 [`KeyBatchLoader`](key-batch-loader.md) when a backend can fetch a set of keys together and bounded
-admission is required; use [`MicroBatcher`](batching.md) for positional bulk operations.
+admission is required. The two can also be [composed](key-batch-loader.md#coalescing-across-running-batches)
+to coalesce equal keys throughout a batched lookup. Use [`MicroBatcher`](batching.md) for positional
+bulk operations.

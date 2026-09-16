@@ -60,7 +60,7 @@ contracts.
 
 `MicroBatcher<I, O>` batches independent positional operations. `KeyBatchLoader<K, V>` additionally
 coalesces equal lookup keys within a batching window. Both provide bounded admission and backend
-concurrency with explicit failure, cancellation, shutdown, and observation contracts.
+concurrency with explicit failure, cancellation, flush, shutdown, and observation contracts.
 
 `SingleFlight<K, V>` instead coalesces equal keys for the full lifetime of an asynchronous operation.
 It has no batching, caching, admission, executor, or lifecycle machinery.
@@ -81,7 +81,8 @@ backpressure, failure, and lifecycle contracts.
 ## Ordered consumers
 
 `LaneConsumer<K, V>` owns one Kafka consumer and fans records from its assigned partitions into a
-configurable number of ordered logical lanes. Each lane forms independent micro-batches; lanes run in
+configurable number of ordered logical lanes. Route by key, topic partition, or record contents;
+partition routing also supports keyless records. Each lane forms independent micro-batches; lanes run in
 parallel on virtual threads, subject to a separate concurrency limit. Fixed topic collections and
 regular-expression topic subscriptions are supported. Sparse observed offsets are committed only
 through the safe completion frontier.

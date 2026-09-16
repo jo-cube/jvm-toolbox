@@ -2,15 +2,18 @@ package org.jcube.jvmtoolbox.batching;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.Test;
 
@@ -32,11 +35,26 @@ class BatchStatisticsTest {
             assertEquals(2, statistics.snapshot().incompleteRequests());
             assertEquals(1, statistics.snapshot().batchesInFlight());
 
-            cancelled.cancel(false);
+            try (var callers = Executors.newVirtualThreadPerTaskExecutor()) {
+                var cancellations = new ArrayList<java.util.concurrent.Future<Boolean>>();
+                var start = new CountDownLatch(1);
+                for (int index = 0; index < 16; index++) {
+                    cancellations.add(callers.submit(() -> {
+                        start.await();
+                        return cancelled.cancel(false);
+                    }));
+                }
+                start.countDown();
+                for (var cancellation : cancellations) {
+                    assertTrue(cancellation.get(2, SECONDS));
+                }
+            }
+            assertTrue(cancelled.cancel(true));
             assertEquals(1, statistics.snapshot().incompleteRequests());
             assertThrows(RejectedExecutionException.class, () -> loader.load("rejected"));
             releaseBackend.countDown();
             assertEquals(Optional.of("value"), live.get(2, SECONDS));
+            assertFalse(live.cancel(false));
         } finally {
             releaseBackend.countDown();
             loader.close();
