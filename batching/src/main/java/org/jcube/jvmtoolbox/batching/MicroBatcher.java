@@ -36,12 +36,6 @@ import java.util.function.LongSupplier;
  * @param <O> output type
  */
 public final class MicroBatcher<I, O> implements AutoCloseable {
-    private enum State {
-        ACCEPTING,
-        DRAINING,
-        CLOSED
-    }
-
     private final BatchingConfig config;
     private final BatchProcessor<I, O> processor;
     private final BatchObserver observer;
@@ -56,7 +50,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     private final Semaphore executionSlots;
     private final Thread coordinator;
 
-    private volatile State state = State.ACCEPTING;
+    private boolean accepting = true;
     private int outstanding;
 
     /**
@@ -170,7 +164,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         Submission<I, O> boundary = null;
         lock.lock();
         try {
-            if (state == State.ACCEPTING) {
+            if (accepting) {
                 boundary = new Submission<>(null, 0, new CompletableFuture<>());
                 ingress.addLast(boundary);
                 workAvailable.signal();
@@ -196,8 +190,8 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     public void close() {
         lock.lock();
         try {
-            if (state == State.ACCEPTING) {
-                state = State.DRAINING;
+            if (accepting) {
+                accepting = false;
                 capacityAvailable.signalAll();
                 workAvailable.signalAll();
             }
@@ -215,7 +209,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
 
     private BatchObserver.RejectionReason awaitCapacity() throws InterruptedException {
         long remaining = admissionTimeoutNanos;
-        while (outstanding == config.maxPendingRequests() && state == State.ACCEPTING) {
+        while (outstanding == config.maxPendingRequests() && accepting) {
             switch (config.admissionPolicy()) {
                 case REJECT -> {
                     return BatchObserver.RejectionReason.CAPACITY;
@@ -229,7 +223,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                 }
             }
         }
-        return state == State.ACCEPTING ? null : BatchObserver.RejectionReason.CLOSED;
+        return accepting ? null : BatchObserver.RejectionReason.CLOSED;
     }
 
     private void coordinate() {
@@ -237,12 +231,9 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
             while (true) {
                 var first = takeFirst();
                 if (first == null) {
-                    if (state != State.ACCEPTING) {
-                        executionSlots.acquireUninterruptibly(config.maxConcurrentBatches());
-                        executionSlots.release(config.maxConcurrentBatches());
-                        return;
-                    }
-                    continue;
+                    executionSlots.acquireUninterruptibly(config.maxConcurrentBatches());
+                    executionSlots.release(config.maxConcurrentBatches());
+                    return;
                 }
                 if (first.input == null) {
                     // A flush marker separates admission groups. No later batch can hold a slot yet.
@@ -260,7 +251,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         } finally {
             lock.lock();
             try {
-                state = State.CLOSED;
+                accepting = false;
                 capacityAvailable.signalAll();
                 workAvailable.signalAll();
             } finally {
@@ -276,15 +267,10 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
         lock.lock();
         try {
             while (ingress.isEmpty()) {
-                if (state != State.ACCEPTING) {
+                if (!accepting) {
                     return null;
                 }
-                try {
-                    workAvailable.await();
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    return null;
-                }
+                workAvailable.awaitUninterruptibly();
             }
             return ingress.removeFirst();
         } finally {
@@ -293,7 +279,8 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
     }
 
     private List<Submission<I, O>> formBatch(Submission<I, O> first) {
-        var batch = new ArrayList<Submission<I, O>>(config.maxBatchSize());
+        int capacity = Math.min(config.maxBatchSize(), config.maxPendingRequests());
+        var batch = new ArrayList<Submission<I, O>>(capacity);
         batch.add(first);
         while (batch.size() < config.maxBatchSize()) {
             var next = takeBeforeDeadline(batch.getFirst().admittedAt, batch);
@@ -324,7 +311,7 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                 if (hasCancelled(batch)) {
                     return null;
                 }
-                if (state != State.ACCEPTING) {
+                if (!accepting) {
                     return null;
                 }
                 long remaining = remainingWait(oldestAdmission, nanoClock.getAsLong(), maxWaitNanos);
@@ -333,9 +320,8 @@ public final class MicroBatcher<I, O> implements AutoCloseable {
                 }
                 try {
                     workAvailable.awaitNanos(remaining);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    return null;
+                } catch (InterruptedException ignored) {
+                    // Only close changes the private coordinator's lifecycle.
                 }
             }
             return ingress.getFirst().input == null ? null : ingress.removeFirst();
