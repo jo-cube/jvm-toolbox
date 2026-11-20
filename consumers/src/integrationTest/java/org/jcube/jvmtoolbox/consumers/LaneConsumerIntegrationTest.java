@@ -288,6 +288,45 @@ class LaneConsumerIntegrationTest {
         assertNull(failure.get());
     }
 
+    @Test
+    void commitsPastAnAbortedTransactionWithoutDeliveringItsRecords() throws Exception {
+        String topic = createTopic(1);
+        String group = unique("read-committed");
+        try (var producer = new KafkaProducer<>(
+                Map.of(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS,
+                        ProducerConfig.TRANSACTIONAL_ID_CONFIG, unique("transaction")),
+                new IntegerSerializer(),
+                new StringSerializer())) {
+            producer.initTransactions();
+            producer.beginTransaction();
+            producer.send(new ProducerRecord<>(topic, 0, 0, "aborted"))
+                    .get(TIMEOUT.toMillis(), MILLISECONDS);
+            producer.abortTransaction();
+        }
+
+        var setup = new LaneConsumer<>(
+                Map.of(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS,
+                        ConsumerConfig.GROUP_ID_CONFIG, group,
+                        ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
+                        ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed"),
+                new IntegerDeserializer(),
+                new StringDeserializer(),
+                List.of(topic),
+                config(1, 1, 1, 1),
+                LaneRouter.byPartition(),
+                records -> fail("received records from an aborted transaction"));
+        var failure = new AtomicReference<Throwable>();
+        Thread runner = start(setup, failure);
+        try {
+            // Offsets 0 and 1 hold the aborted record and its transaction marker.
+            awaitCommitted(group, Map.of(new TopicPartition(topic, 0), 2L));
+        } finally {
+            setup.close();
+            runner.join();
+        }
+        assertNull(failure.get());
+    }
+
     private String createTopic(int partitions) throws Exception {
         String topic = unique("topic");
         topics.add(topic);

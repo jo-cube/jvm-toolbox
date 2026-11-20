@@ -39,7 +39,9 @@ import org.apache.kafka.common.serialization.Deserializer;
  * virtual threads.
  *
  * <p>Offsets are committed only to the first incomplete observed record in each partition, or to the
- * poll's next position when all observed records complete. Partial-frontier commits carry the last
+ * poll's next position when no observed records remain incomplete, including polls that advance
+ * the position without delivering records. A record offset or poll position below the last reported
+ * position for the same assignment fails {@code run()}. Partial-frontier commits carry the last
  * completed record's leader epoch when available. Automatic commits are disabled. Batch, routing,
  * polling, tracking, and commit failures fail {@code run()}.
  *
@@ -92,7 +94,6 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
     private final CountDownLatch terminated = new CountDownLatch(1);
 
     private volatile Thread ownerThread;
-    private long assignmentEpoch;
     private int activeBatches;
     private int globalInFlight;
     private int nextLane;
@@ -246,20 +247,23 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
             failure = startFailure;
         } finally {
             lifecycle.compareAndSet(Lifecycle.RUNNING, Lifecycle.STOPPING);
-            cancelAll();
             try {
                 if (consumer == null) {
                     closeDeserializers();
                 } else {
-                    consumer.close();
+                    var owned = consumer;
+                    try (owned) {
+                        cancelAll();
+                    }
                 }
             } catch (Throwable closeFailure) {
                 failure = merge(failure, closeFailure);
+            } finally {
+                activeConsumer.set(null);
+                ownerThread = null;
+                lifecycle.set(Lifecycle.TERMINATED);
+                terminated.countDown();
             }
-            activeConsumer.set(null);
-            ownerThread = null;
-            lifecycle.set(Lifecycle.TERMINATED);
-            terminated.countDown();
         }
         rethrow(failure);
     }
@@ -350,7 +354,8 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
                 throw new IllegalStateException("received a record for an unassigned partition: "
                         + topicPartition);
             }
-            if (record.offset() <= partition.lastObservedOffset) {
+            if (record.offset() <= partition.lastObservedOffset
+                    || partition.precedesObservedPosition(record.offset())) {
                 throw new IllegalStateException("non-monotonic offset " + record.offset() + " for "
                         + topicPartition);
             }
@@ -366,7 +371,16 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         for (var nextOffset : records.nextOffsets().entrySet()) {
             PartitionState partition = partitions.get(nextOffset.getKey());
             if (partition != null) {
-                partition.observedPosition = nextOffset.getValue();
+                OffsetAndMetadata position = nextOffset.getValue();
+                if (partition.precedesObservedPosition(position.offset())) {
+                    throw new IllegalStateException("non-monotonic position " + position.offset()
+                            + " for " + partition.topicPartition);
+                }
+                partition.observedPosition = position;
+                // Kafka can advance past control records or aborted transactions without delivering data.
+                if (partition.offsets.isEmpty()) {
+                    advance(partition);
+                }
             }
         }
     }
@@ -446,7 +460,7 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
             }
             lane.active = null;
             activeBatches--;
-            if (batch.invalidated || stale(batch)) {
+            if (batch.invalidated) {
                 requeueStillOwned(batch);
             } else if (completion.failure != null) {
                 return completion.failure;
@@ -457,22 +471,12 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         return null;
     }
 
-    private boolean stale(Batch<K, V> batch) {
-        for (Envelope<K, V> envelope : batch.envelopes) {
-            PartitionState current = partitions.get(envelope.partition.topicPartition);
-            if (current == null || current.assignmentEpoch != envelope.partition.assignmentEpoch) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private void requeueStillOwned(Batch<K, V> batch) {
         List<Envelope<K, V>> envelopes = batch.envelopes;
         for (int index = envelopes.size() - 1; index >= 0; index--) {
             Envelope<K, V> envelope = envelopes.get(index);
             PartitionState current = partitions.get(envelope.partition.topicPartition);
-            if (current != null && current.assignmentEpoch == envelope.partition.assignmentEpoch) {
+            if (current == envelope.partition) {
                 batch.lane.queue.addFirst(envelope);
             }
         }
@@ -743,7 +747,9 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         if (first == null) {
             return second;
         }
-        first.addSuppressed(second);
+        if (first != second) {
+            first.addSuppressed(second);
+        }
         return first;
     }
 
@@ -780,9 +786,7 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         @Override
         public void onPartitionsAssigned(Collection<TopicPartition> assigned) {
             for (TopicPartition topicPartition : assigned) {
-                partitions.put(
-                        topicPartition,
-                        new PartitionState(topicPartition, ++assignmentEpoch));
+                partitions.computeIfAbsent(topicPartition, PartitionState::new);
             }
             applyBackpressure(consumer);
         }
@@ -838,9 +842,9 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         }
     }
 
+    // Each assignment has a distinct state object, even when the partition is reassigned.
     private static final class PartitionState {
         private final TopicPartition topicPartition;
-        private final long assignmentEpoch;
         private final ArrayDeque<TrackedOffset> offsets = new ArrayDeque<>();
         private long lastObservedOffset = -1;
         private long committedOffset = -1;
@@ -848,9 +852,12 @@ public final class LaneConsumer<K, V> implements AutoCloseable {
         private OffsetAndMetadata observedPosition;
         private OffsetAndMetadata commitCandidate;
 
-        private PartitionState(TopicPartition topicPartition, long assignmentEpoch) {
+        private PartitionState(TopicPartition topicPartition) {
             this.topicPartition = topicPartition;
-            this.assignmentEpoch = assignmentEpoch;
+        }
+
+        private boolean precedesObservedPosition(long offset) {
+            return observedPosition != null && offset < observedPosition.offset();
         }
     }
 
