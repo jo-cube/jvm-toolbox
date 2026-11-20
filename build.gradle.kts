@@ -13,7 +13,32 @@ subprojects {
         mavenCentral()
     }
 
-    tasks.withType<JavaCompile>().configureEach {
-        options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+    plugins.withType<JavaPlugin> {
+        extensions.configure<JavaPluginExtension> {
+            toolchain.languageVersion = JavaLanguageVersion.of(25)
+            withSourcesJar()
+            withJavadocJar()
+        }
+
+        tasks.withType<JavaCompile>().configureEach {
+            options.release = 25
+            options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+        }
+
+        tasks.withType<Javadoc>().configureEach {
+            (options as StandardJavadocDocletOptions).addBooleanOption("Werror", true)
+        }
+
+        tasks.withType<Jar>().configureEach {
+            from(rootProject.file("LICENSE")) {
+                into("META-INF")
+            }
+        }
+
+        extensions.configure<TestingExtension> {
+            suites.withType<JvmTestSuite>().configureEach {
+                useJUnitJupiter("6.1.2")
+            }
+        }
     }
 }

@@ -10,19 +10,6 @@ base {
     archivesName = "jvm-toolbox-batching"
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-    withSourcesJar()
-    withJavadocJar()
-}
-
-dependencies {
-    testImplementation("org.junit.jupiter:junit-jupiter:6.1.2")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
-
 val perfSourceSet = sourceSets.create("perf") {
     compileClasspath += sourceSets.main.get().output
     runtimeClasspath += sourceSets.main.get().output
@@ -36,24 +23,6 @@ tasks.named<JavaCompile>(perfSourceSet.compileJavaTaskName) {
 dependencies {
     add(perfSourceSet.implementationConfigurationName, "org.hdrhistogram:HdrHistogram:2.2.2")
     add(perfSourceSet.implementationConfigurationName, "org.postgresql:postgresql:42.7.13")
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    options.release = 25
-}
-
-tasks.withType<Jar>().configureEach {
-    from(rootProject.file("LICENSE")) {
-        into("META-INF")
-    }
-}
-
-tasks.withType<Javadoc>().configureEach {
-    (options as StandardJavadocDocletOptions).addBooleanOption("Werror", true)
-}
-
-tasks.test {
-    useJUnitPlatform()
 }
 
 val verifyRuntimeClasspath = tasks.register("verifyRuntimeClasspath") {

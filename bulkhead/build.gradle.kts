@@ -10,37 +10,6 @@ base {
     archivesName = "jvm-toolbox-bulkhead"
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-    withSourcesJar()
-    withJavadocJar()
-}
-
-dependencies {
-    testImplementation("org.junit.jupiter:junit-jupiter:6.1.2")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    options.release = 25
-}
-
-tasks.withType<Jar>().configureEach {
-    from(rootProject.file("LICENSE")) {
-        into("META-INF")
-    }
-}
-
-tasks.withType<Javadoc>().configureEach {
-    (options as StandardJavadocDocletOptions).addBooleanOption("Werror", true)
-}
-
-tasks.test {
-    useJUnitPlatform()
-}
-
 val verifyRuntimeClasspath = tasks.register("verifyRuntimeClasspath") {
     group = "verification"
     description = "Verifies that the published runtime has no dependencies"
