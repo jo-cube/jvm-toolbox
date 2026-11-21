@@ -3,10 +3,12 @@ package org.jcube.jvmtoolbox.consumers;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -27,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
@@ -38,6 +41,8 @@ import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @SuppressWarnings("deprecation")
 class LaneConsumerTest {
@@ -66,7 +71,7 @@ class LaneConsumerTest {
     }
 
     @Test
-    void consumerConstructionFailureClosesOwnedDeserializers() {
+    void consumerConstructionFailureClosesOwnedDeserializers() throws Exception {
         var expected = new IllegalStateException("construction failed");
         var keyDeserializer = new ClosingDeserializer<Integer>();
         var valueDeserializer = new ClosingDeserializer<String>();
@@ -83,9 +88,11 @@ class LaneConsumerTest {
                 },
                 System::nanoTime);
 
+        valueDeserializer.closeFailure = expected;
         assertSame(expected, assertThrows(IllegalStateException.class, setup::run));
         assertEquals(1, keyDeserializer.closeCalls);
         assertEquals(1, valueDeserializer.closeCalls);
+        assertTrue(Thread.ofVirtual().start(setup::close).join(Duration.ofSeconds(2)));
     }
 
     @Test
@@ -275,6 +282,72 @@ class LaneConsumerTest {
             runner.join();
         }
         assertNull(failure.get());
+    }
+
+    @Test
+    void commitsPositionOnlyPollsWithoutPassingAnIncompleteRecord() throws Exception {
+        var mock = new TestConsumer<Integer, String>();
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var setup = setup(mock, config(1, 1, 1, 4, 4, 2), ignored -> 0, records -> {
+            assertEquals(0, records.getFirst().offset());
+            started.countDown();
+            release.await();
+        });
+        mock.initial(List.of(P0, P1), List.of(record(0, 0, 1, "blocked")));
+        var failure = new AtomicReference<Throwable>();
+        Thread runner = start(setup, failure);
+        var blockedPosition = new OffsetAndMetadata(9, Optional.of(3), "");
+        var idlePosition = new OffsetAndMetadata(20, Optional.of(4), "");
+        try {
+            assertTrue(started.await(2, SECONDS));
+            mock.pollPositionsWithoutRecords(Map.of(P0, blockedPosition, P1, idlePosition));
+
+            assertEquals(idlePosition, mock.awaitCommitMetadata(P1, 20));
+            assertTrue(mock.commits.stream().noneMatch(commit -> commit.containsKey(P0)));
+
+            release.countDown();
+            assertEquals(blockedPosition, mock.awaitCommitMetadata(P0, 9));
+        } finally {
+            release.countDown();
+            setup.close();
+            runner.join();
+        }
+        assertNull(failure.get());
+    }
+
+    @ParameterizedTest(name = "rewind delivers a record: {0}")
+    @ValueSource(booleans = {true, false})
+    void failsWhenPollRewindsPastAPositionOnlyCommit(boolean withRecord) throws Exception {
+        var mock = new TestConsumer<Integer, String>();
+        var setup = setup(mock, config(1, 1, 1, 1, 1, 1),
+                record -> fail("routed a record after the rewind"),
+                records -> fail("processed a record after the rewind"));
+        mock.initial(List.of(P0), List.of());
+        var committed = Map.of(P0, new OffsetAndMetadata(20));
+        var failure = new AtomicReference<Throwable>();
+        Thread runner = start(setup, failure);
+        try {
+            mock.pollPositionsWithoutRecords(committed);
+            mock.awaitCommit(P0, 20);
+
+            if (withRecord) {
+                mock.schedulePollTask(() -> {
+                    mock.seek(P0, 10);
+                    mock.addRecord(record(0, 10, 1, "after rewind"));
+                });
+            } else {
+                mock.pollPositionsWithoutRecords(Map.of(P0, new OffsetAndMetadata(10)));
+            }
+            assertTrue(runner.join(Duration.ofSeconds(2)), "consumer did not fail after rewind");
+            var thrown = assertInstanceOf(IllegalStateException.class, failure.get());
+            String kind = withRecord ? "offset" : "position";
+            assertEquals("non-monotonic " + kind + " 10 for " + P0, thrown.getMessage());
+            assertEquals(List.of(committed), mock.commits);
+        } finally {
+            setup.close();
+            runner.join();
+        }
     }
 
     @Test
@@ -632,6 +705,7 @@ class LaneConsumerTest {
         private final LinkedBlockingQueue<Set<TopicPartition>> resumes = new LinkedBlockingQueue<>();
         private volatile ConsumerRebalanceListener listener;
         private volatile RuntimeException commitFailure;
+        private Map<TopicPartition, OffsetAndMetadata> positionOnly = Map.of();
 
         private TestConsumer() {
             super(OffsetResetStrategy.EARLIEST);
@@ -642,6 +716,25 @@ class LaneConsumerTest {
                 Collection<String> topics, ConsumerRebalanceListener listener) {
             this.listener = listener;
             super.subscribe(topics, listener);
+        }
+
+        @Override
+        public synchronized ConsumerRecords<K, V> poll(Duration timeout) {
+            var records = super.poll(timeout);
+            if (positionOnly.isEmpty()) {
+                return records;
+            }
+            assertTrue(records.isEmpty());
+            var advanced = new ConsumerRecords<K, V>(Map.of(), positionOnly);
+            positionOnly = Map.of();
+            return advanced;
+        }
+
+        private void pollPositionsWithoutRecords(Map<TopicPartition, OffsetAndMetadata> offsets) {
+            schedulePollTask(() -> {
+                offsets.forEach(this::seek);
+                positionOnly = offsets;
+            });
         }
 
         @Override
@@ -729,6 +822,7 @@ class LaneConsumerTest {
 
     private static final class ClosingDeserializer<T> implements Deserializer<T> {
         private int closeCalls;
+        private RuntimeException closeFailure;
 
         @Override
         public T deserialize(String topic, byte[] data) {
@@ -738,6 +832,9 @@ class LaneConsumerTest {
         @Override
         public void close() {
             closeCalls++;
+            if (closeFailure != null) {
+                throw closeFailure;
+            }
         }
     }
 }

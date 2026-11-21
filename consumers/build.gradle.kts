@@ -9,43 +9,13 @@ base {
     archivesName = "jvm-toolbox-consumers"
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-    withSourcesJar()
-    withJavadocJar()
-}
-
 dependencies {
     api("org.apache.kafka:kafka-clients:4.3.1")
-
-    testImplementation("org.junit.jupiter:junit-jupiter:6.1.2")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    options.release = 25
-}
-
-tasks.withType<Jar>().configureEach {
-    from(rootProject.file("LICENSE")) {
-        into("META-INF")
-    }
-}
-
-tasks.withType<Javadoc>().configureEach {
-    (options as StandardJavadocDocletOptions).addBooleanOption("Werror", true)
-}
-
-tasks.test {
-    useJUnitPlatform()
 }
 
 testing {
     suites {
         register<JvmTestSuite>("integrationTest") {
-            useJUnitJupiter("6.1.2")
             dependencies {
                 implementation(project())
             }

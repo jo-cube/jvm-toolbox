@@ -82,6 +82,46 @@ class MicroBatcherTimingTest {
         }
     }
 
+    @Test
+    void interruptingTheCoordinatorDoesNotEndTheNextBatchsLinger() throws Exception {
+        var batches = new LinkedBlockingQueue<List<String>>();
+        var config = new BatchingConfig(
+                2, Duration.ofHours(1), 1, 2, AdmissionPolicy.REJECT, Duration.ZERO);
+        var observer = new BatchObserver() {
+            @Override
+            public void onBatchDispatched(int requestCount) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        try (var batcher = new MicroBatcher<String, String>(config, inputs -> {
+            batches.add(inputs);
+            return inputs.stream().map(BatchOutcome::success).toList();
+        }, observer)) {
+            var first = batcher.submit("first");
+            batcher.flush();
+            assertEquals(List.of("first"), batches.poll(2, SECONDS));
+            assertEquals("first", first.get(2, SECONDS));
+
+            var second = batcher.submit("second");
+            assertNull(batches.poll(100, MILLISECONDS));
+            var third = batcher.submit("third");
+
+            assertEquals(List.of("second", "third"), batches.poll(2, SECONDS));
+            assertEquals("second", second.get(2, SECONDS));
+            assertEquals("third", third.get(2, SECONDS));
+        }
+    }
+
+    @Test
+    void aLargeBatchLimitDoesNotRequireMoreSpaceThanAdmissionAllows() throws Exception {
+        var config = new BatchingConfig(
+                Integer.MAX_VALUE, Duration.ZERO, 1, 1, AdmissionPolicy.REJECT, Duration.ZERO);
+        try (var batcher = new MicroBatcher<String, String>(config, inputs ->
+                List.of(BatchOutcome.success(inputs.getFirst())))) {
+            assertEquals("only", batcher.submit("only").get(2, SECONDS));
+        }
+    }
+
     private static MicroBatcher<String, String> batcher(
             int maxBatchSize, AtomicLong clock, LinkedBlockingQueue<List<String>> batches) {
         var config = new BatchingConfig(

@@ -8,8 +8,9 @@
 - Docker Compose for consumer Kafka integration and batching PostgreSQL performance work
 
 The root is an unpublished Gradle aggregator. `batching` and `bulkhead` are dependency-free
-artifacts; `consumers` intentionally depends on and exposes the Apache Kafka client API. JUnit, JMH,
-HdrHistogram, PostgreSQL JDBC, and profiling dependencies remain outside production source sets.
+artifacts. `consumers` depends on and exposes the Apache Kafka client API. The root build configures
+Java, JUnit, and Javadoc conventions for all three modules. JUnit, JMH, HdrHistogram, PostgreSQL JDBC,
+and profiling dependencies remain outside production source sets.
 
 ## Repository map
 
@@ -43,10 +44,9 @@ just docs                 generate all artifacts' API Javadocs
 just publication-check    build artifacts, POMs, and Gradle metadata
 ```
 
-`just check` is the expected pre-commit command. It compiles the batching JMH and performance source
-sets and the consumer integration-test source set, but does not execute external-system workflows or
-require Docker. Performance commands are documented in
-[performance.md](../batching/docs/performance.md).
+`just check` is the expected pre-commit command. It compiles both JMH source sets, the batching
+performance source set, and the consumer integration-test source set. It runs without Docker. See
+[performance.md](../batching/docs/performance.md) for performance commands.
 
 ## Kafka integration
 

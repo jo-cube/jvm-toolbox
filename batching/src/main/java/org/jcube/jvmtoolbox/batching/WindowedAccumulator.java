@@ -344,16 +344,8 @@ public final class WindowedAccumulator<I, A> implements AutoCloseable {
     }
 
     private void awaitProcessed(long target) {
-        boolean interrupted = false;
         while (processedWindowId < target) {
-            try {
-                windowProcessed.await();
-            } catch (InterruptedException ignored) {
-                interrupted = true;
-            }
-        }
-        if (interrupted) {
-            Thread.currentThread().interrupt();
+            windowProcessed.awaitUninterruptibly();
         }
     }
 

@@ -100,7 +100,11 @@ separate configured limit enforces `maxConcurrentBatches`.
 Completion is tracked only for offsets actually observed from each partition; offsets are never
 assumed contiguous. For observed offsets `100✓, 105✓, 109?, 120✓, 135✓`, the safe commit is `109`.
 That commit carries `105`'s leader epoch when available, as Kafka requires for the previously consumed
-record. When `109` completes, the commit may jump to the poll position after `135`.
+record. When `109` completes, the commit may jump to the poll position after `135`. A poll can also
+advance the position without delivering records, for example past transaction markers or aborted
+transactions. That position is safe to commit once the partition has no incomplete records.
+If Kafka rewinds a partition within the same assignment, a record or poll position below the last
+reported position fails `run()` with `IllegalStateException`.
 
 The processor receives an unmodifiable ordered list. Returning means the whole batch succeeded.
 Throwing means the whole setup fails; there is no partial-success contract or built-in retry. Polling,
@@ -127,9 +131,9 @@ even one revoked record, the entire mixed-partition batch is invalidated and its
 interrupted. Records in that batch from still-owned partitions are put back at the front of their lane
 only after the old invocation returns, preserving non-overlap and order.
 
-Each assignment has an internal epoch. A completion from an older epoch cannot complete offsets,
-commit, or affect a later assignment of the same topic partition. The implementation also avoids
-committing revoked partitions during or after revocation.
+Each assignment has separate offset state. Revoked offsets are discarded, and a completed invalidated
+batch can requeue records only from assignments that are still owned. This fences old work even
+when the same topic partition is assigned again.
 
 Interruption is cooperative: an HTTP call, JDBC driver, native operation, or user processor may ignore
 it or may have already changed downstream state. The library therefore cannot guarantee no cross-JVM
